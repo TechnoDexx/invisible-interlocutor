@@ -1,0 +1,27 @@
+on:
+  pull_request:
+    - workflows: [build]
+      filter:
+        source_branches: ["**"]
+        target_branches: ["main"]
+
+  push:
+    - workflows: [build]
+      filter:
+        branches: ["main"]
+
+workflows:
+  build:
+    tasks:
+      - name: compile
+        cubes:
+          - name: build-binary
+            image: docker.io/library/python:3.11
+            script:
+              - pip install --upgrade pip
+              - pip install -r requirements.txt
+              - pip install nuitka
+              - python -m nuitka --onefile --output-dir=dist --output-file=invisible-interlocutor main.py
+            artifacts:
+              paths:
+                - dist/invisible-interlocutor
