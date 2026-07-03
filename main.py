@@ -6,7 +6,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from core import Session
 load_dotenv()
-sess=Session.Session()
+
 
 client = openai.OpenAI(
     api_key=os.getenv('API_KEY'),
