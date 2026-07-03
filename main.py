@@ -13,7 +13,7 @@ client = openai.OpenAI(
     project=os.getenv('PROJECT')
 )
 
-PROMPT_ID = "fvtfrhldlipm16uqtdb9"
+PROMPT_ID = os.getenv('PROMPT_ID') #"fvtfrhldlipm16uqtdb9"
 history = []
 
 def ask(prompt_text: str, retries: int = 3) -> str:
