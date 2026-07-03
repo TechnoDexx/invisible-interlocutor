@@ -1,28 +1,25 @@
 on:
   pull_request:
-    - workflows: [build]
-      filter:
-        source_branches: ["**"]
-        target_branches: ["main"]
+  - workflows: [ build ]
+    filter:
+      source_branches: [ "**" ]
+      target_branches: [ "main" ]
 
   push:
-    - workflows: [build]
-      filter:
-        branches: ["main"]
+  - workflows: [ build ]
+    filter:
+      branches: [ "main" ]
 
 workflows:
   build:
     tasks:
-      - name: compile
-        cubes:
-          - name: build-binary
-            image: docker.io/library/python:3.11
-            script:
-              - apt-get update && apt-get install -y patchelf
-              - pip install --upgrade pip
-              - pip install -r requirements.txt
-              - pip install nuitka
-              - python -m nuitka --onefile --output-dir=dist --output-file=invisible-interlocutor main.py
-            artifacts:
-              paths:
-                - dist/invisible-interlocutor
+    - name: compile
+      cubes:
+      - name: build-binary
+        image: androsh7/nuitka-compiler:latest-x86_64-glibc-2.28-py3.12
+        script:
+        - pip install -r requirements.txt
+        - python3 -m nuitka --onefile --output-dir=dist --output-file=invisible-interlocutor main.py
+        artifacts:
+          paths:
+          - dist/invisible-interlocutor
