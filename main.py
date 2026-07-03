@@ -1,7 +1,11 @@
 import json
 import openai
 import time
+import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 client = openai.OpenAI(
     api_key="",
