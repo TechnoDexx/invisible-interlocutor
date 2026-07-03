@@ -18,7 +18,7 @@ workflows:
           - name: build-binary
             image: androsh7/nuitka-compiler:latest-x86_64-glibc-2.28-py3.12
             script:
-              - ln -sf /usr/bin/python3 /usr/bin/python
+              - apt-get update && apt-get install -y patchelf
               - pip install -r requirements.txt
               - python -m nuitka --onefile --output-dir=dist --output-file=invisible-interlocutor main.py
             artifacts:
