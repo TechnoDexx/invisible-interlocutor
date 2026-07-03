@@ -8,9 +8,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 client = openai.OpenAI(
-    api_key="",
-    base_url="https://ai.api.cloud.yandex.net/v1",
-    project="b1g0mvagt30sttlfi76u"
+    api_key=os.getenv('API_KEY',""),
+    base_url=os.getenv('BASE_URL',"https://ai.api.cloud.yandex.net/v1"),
+    project=os.getenv('PROJECT',"b1g0mvagt30sttlfi76u")
 )
 
 PROMPT_ID = "fvtfrhldlipm16uqtdb9"
