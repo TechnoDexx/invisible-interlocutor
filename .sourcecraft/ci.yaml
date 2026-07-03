@@ -4,8 +4,15 @@ on:
     filter:
       source_branches: [ "**" ]
       target_branches: [ "main" ]
+  - workflows: [ build ]
+    filter:
+      source_branches: [ "**" ]
+      target_branches: [ "main" ]
 
   push:
+  - workflows: [ build ]
+    filter:
+      branches: [ "main" ]
   - workflows: [ build ]
     filter:
       branches: [ "main" ]
