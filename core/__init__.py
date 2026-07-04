@@ -1,9 +1,5 @@
-class Session():
-    def __init__(self,history):
-        self.history=self.history
-    def add_user_message(self,text):
-        """добавляет сообщения пользователя"""
-    def add_assistant_message(self,text):
-        """добавляет ответ ассистента"""
-            
-        
+from .session import Session
+from .ai_client import AiClient
+from .chat_app import ChatApp
+
+__all__=['Session','AiClient','ChatApp']

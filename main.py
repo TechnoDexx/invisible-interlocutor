@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from core import Session
 load_dotenv()
 
-
+print("API_KEY:", os.getenv('API_KEY')[:10])  # покажет первые 10 символов
 client = openai.OpenAI(
     api_key=os.getenv('API_KEY'),
     base_url=os.getenv('BASE_URL'),
