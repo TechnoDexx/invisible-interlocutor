@@ -4,10 +4,13 @@ import time
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from core import Session
+#from core import Session
 load_dotenv()
 
-print("API_KEY:", os.getenv('API_KEY')[:10])  # покажет первые 10 символов
+debug=os.getenv('DEBUG',False)
+if debug:
+    print("API_KEY:", os.getenv('API_KEY')[:10])  # покажет первые 10 
+
 client = openai.OpenAI(
     api_key=os.getenv('API_KEY'),
     base_url=os.getenv('BASE_URL'),
@@ -32,7 +35,7 @@ def ask(prompt_text: str, retries: int = 3) -> str:
             )
             answer = response.output_text
             history.append({"role": "assistant", "content": answer})
-            return "[[ {0} ]]".format(answer)
+            return "[[-<< {0} >>-]]".format(answer)
         
         except Exception as e:
             # Если это последняя попытка — поднимаем исключение дальше
