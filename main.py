@@ -4,8 +4,11 @@ import time
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-#from core import Session
+from colorama import Fore, Back
 load_dotenv()
+
+GREEN = "\033[92m"
+RESET = "\033[0m"
 
 debug=os.getenv('DEBUG',False)
 if debug:
@@ -35,7 +38,7 @@ def ask(prompt_text: str, retries: int = 3) -> str:
             )
             answer = response.output_text
             history.append({"role": "assistant", "content": answer})
-            return "[[-<< {0} >>-]]".format(answer)
+            return f"{GREEN}{answer}{RESET}"
         
         except Exception as e:
             # Если это последняя попытка — поднимаем исключение дальше
