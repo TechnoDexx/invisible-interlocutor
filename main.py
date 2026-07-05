@@ -4,8 +4,10 @@ import time
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from colorama import Fore, Back
+from colorama import Fore, Back, Style, init
 load_dotenv()
+
+init(autoreset=True)
 
 GREEN = "\033[92m"
 RESET = "\033[0m"
@@ -38,7 +40,7 @@ def ask(prompt_text: str, retries: int = 3) -> str:
             )
             answer = response.output_text
             history.append({"role": "assistant", "content": answer})
-            return f"{GREEN}{answer}{RESET}"
+            return Fore.GREEN+answer
         
         except Exception as e:
             # Если это последняя попытка — поднимаем исключение дальше
