@@ -2,19 +2,26 @@ import json
 import openai
 import time
 import os
+import sys
 from datetime import datetime
 from dotenv import load_dotenv
-from colorama import Fore, Back, Style, init
-load_dotenv()
-
+from colorama import Fore,Back,Style,init
 init(autoreset=True)
 
-GREEN = "\033[92m"
-RESET = "\033[0m"
+# ===== БЕЗОПАСНЫЙ ВВОД ДЛЯ DOCKER =====
+def safe_input(prompt=""):
+    """Читает строку из stdin, корректно обрабатывая кодировку."""
+    if prompt:
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+    raw = sys.stdin.buffer.readline()
+    try:
+        return raw.decode('utf-8').rstrip('\n')
+    except UnicodeDecodeError:
+        return raw.decode('utf-8', errors='replace').rstrip('\n')
 
-debug=os.getenv('DEBUG',False)
-if debug:
-    print("API_KEY:", os.getenv('API_KEY')[:10])  # покажет первые 10 
+# ===== ЗАГРУЗКА ПЕРЕМЕННЫХ ИЗ .env =====
+load_dotenv()
 
 client = openai.OpenAI(
     api_key=os.getenv('API_KEY'),
@@ -43,11 +50,9 @@ def ask(prompt_text: str, retries: int = 3) -> str:
             return Fore.GREEN+answer
         
         except Exception as e:
-            # Если это последняя попытка — поднимаем исключение дальше
             if attempt == retries - 1:
                 raise
-            # Иначе ждём и повторяем
-            time.sleep(1)  # пауза перед повторной попыткой
+            time.sleep(1)
             continue
 
 def print_history():
@@ -65,7 +70,7 @@ def save_history(filename=None):
         print("История пуста, сохранять нечего.")
         return
     if filename is None:
-        filename = input("Введите имя файла (c расширением): ")
+        filename = safe_input("Введите имя файла (c расширением): ")
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
     print(f"История сохранена в {filename}")
@@ -73,7 +78,7 @@ def save_history(filename=None):
 def load_history(filename=None):
     global history
     if filename is None:
-        filename = input("Введите имя файла для загрузки: ").strip()
+        filename = safe_input("Введите имя файла для загрузки: ").strip()
         if not filename:
             print("Имя файла не указано.")
             return
@@ -98,7 +103,7 @@ def load_history(filename=None):
 
     if history:
         print("Текущая история не пуста.")
-        answer = input("Заменить текущую историю загруженной? (y/n): ").strip().lower()
+        answer = safe_input("Заменить текущую историю загруженной? (y/n): ").strip().lower()
         if answer not in ("y", "да", "yes"):
             print("Загрузка отменена.")
             return
@@ -111,7 +116,7 @@ if __name__ == "__main__":
     print("Команды: /history - показать историю, /save - сохранить в файл, "
           "/load - загрузить из файла, /clear - очистить историю, выход - завершить.")
     while True:
-        user_input = input("> ")
+        user_input = safe_input("> ")
         if user_input.lower() in ("выход", "exit", "quit"):
             break
         if not user_input.strip():
