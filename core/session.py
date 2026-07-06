@@ -2,15 +2,17 @@ class Session():
     def __init__(self,history=[]):
         self.history=self.history
     
-    def add_user_message(self,text):
+    def add_user_message(self,prompt_text):
         """добавляет сообщения пользователя"""
         
     
-    def add_assistant_message(self,text):
+    def add_assistant_message(self,answer_text):
         """добавляет ответ ассистента"""
+        self.history.append({"role": "assistant", "content": answer_text})
     
     def clear(self):
         """Очищает историю"""
+        self.history=None
     
     def save(self,filename):
         """Сохраняет историю в JSON
