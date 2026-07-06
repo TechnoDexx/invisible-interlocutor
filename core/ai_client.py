@@ -10,6 +10,7 @@ class AIClient():
         self.prompt_id = prompt_id
 
     def ask(self, history, retries=3):
+        answer = None
         for attempt in range(retries):
             try:
                 response = self.client.responses.create(
@@ -20,6 +21,6 @@ class AIClient():
             except Exception as e:
                 if attempt == retries-1:
                     raise
-                time.sleep(1*retries)
+                time.sleep(1*attempt)
                 continue
         return answer
