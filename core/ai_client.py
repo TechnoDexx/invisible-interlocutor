@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 class AIClient():
     def __init__(self,api_key, base_url, project, prompt_id, retries, delay,history):
         self.api_key=api_key
