@@ -4,7 +4,7 @@ class Session():
     
     def add_user_message(self,prompt_text):
         """добавляет сообщения пользователя"""
-        
+        self.history.append({"role": "user", "content": prompt_text})
     
     def add_assistant_message(self,answer_text):
         """добавляет ответ ассистента"""
@@ -21,6 +21,7 @@ class Session():
     def load(self,filename):
         """Загружает из JSON (с проверками и
         вопросом о замене)"""
+        
                         
     def print(self):
         """Печатает историю в консоль"""
