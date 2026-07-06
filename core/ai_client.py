@@ -1,14 +1,13 @@
-from dotenv import load_dotenv
+import openai
+import time
+
+
 class AIClient():
-    def __init__(self):
-        load_dotenv()
-        self.api_key = os.getenv('API_KEY')
-        self.base_url = os.getenv('BASE_URL')
-        self.project = os.getenv('PROJECT')
-        self.prompt_id = os.getenv('PROMPT_ID')
-        self.client = openai.OpenAI(self.api_key,
-                                    self.base_url,
-                                    self.project)
+    def __init__(self, api_key, base_url, project, prompt_id):
+        self.client = openai.OpenAI(api_key,
+                                    base_url,
+                                    project)
+        self.prompt_id = prompt_id
 
     def ask(self, history, retries=3):
         for attempt in range(retries):
@@ -21,6 +20,6 @@ class AIClient():
             except Exception as e:
                 if attempt == retries-1:
                     raise
-                time.sleep(1)
+                time.sleep(1*retries)
                 continue
         return answer
