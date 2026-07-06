@@ -4,6 +4,14 @@ import time
 
 class AIClient():
     def __init__(self, api_key, base_url, project, prompt_id):
+        if not api_key:
+            raise ValueError("API key is required")
+        if not base_url:
+            raise ValueError("Base URL is required")
+        if not project:
+            raise ValueError("Project is required")
+        if not prompt_id:
+            raise ValueError("Prompt ID is required")
         self.client = openai.OpenAI(api_key,
                                     base_url,
                                     project)
