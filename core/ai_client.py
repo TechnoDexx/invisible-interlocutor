@@ -12,9 +12,9 @@ class AIClient():
             raise ValueError("Project is required")
         if not prompt_id:
             raise ValueError("Prompt ID is required")
-        self.client = openai.OpenAI(api_key,
-                                    base_url,
-                                    project)
+        self.client = openai.OpenAI(api_key=api_key,
+                                    base_url=base_url,
+                                    project=project)
         self.prompt_id = prompt_id
 
     def ask(self, history, retries=3):

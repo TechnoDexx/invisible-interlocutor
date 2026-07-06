@@ -1,154 +1,26 @@
-import json
-import openai
-import time
+# main.py
 import os
-import sys
-from datetime import datetime
 from dotenv import load_dotenv
-from colorama import Fore, Back, Style, init
-init(autoreset=True)
-
-# ===== БЕЗОПАСНЫЙ ВВОД ДЛЯ DOCKER =====
-
-
-def safe_input(prompt=""):
-    """Читает строку из stdin, корректно обрабатывая кодировку."""
-    if prompt:
-        sys.stdout.write(prompt)
-        sys.stdout.flush()
-    raw = sys.stdin.buffer.readline()
-    try:
-        return raw.decode('utf-8').rstrip('\n')
-    except UnicodeDecodeError:
-        return raw.decode('utf-8', errors='replace').rstrip('\n')
-
-
-# ===== ЗАГРУЗКА ПЕРЕМЕННЫХ ИЗ .env =====
-load_dotenv()
-
-client = openai.OpenAI(
-    api_key=os.getenv('API_KEY'),
-    base_url=os.getenv('BASE_URL'),
-    project=os.getenv('PROJECT')
-)
-
-PROMPT_ID = os.getenv('PROMPT_ID')
-history = []
-
-
-def ask(prompt_text: str, retries: int = 3) -> str:
-    """
-    Отправляет запрос к модели с автоматическими повторными попытками
-    при сбоях соединения или временных ошибках.
-    """
-    history.append({"role": "user", "content": prompt_text})
-
-    for attempt in range(retries):
-        try:
-            response = client.responses.create(
-                prompt={"id": PROMPT_ID},
-                input=history
-            )
-            answer = response.output_text
-            history.append({"role": "assistant", "content": answer})
-            return Fore.GREEN+answer
-
-        except Exception as e:
-            if attempt == retries - 1:
-                raise
-            time.sleep(1)
-            continue
-
-
-def print_history():
-    if not history:
-        print("История пуста.")
-        return
-    print("\n=== ИСТОРИЯ ДИАЛОГА ===")
-    for i, msg in enumerate(history, 1):
-        role = "Вы" if msg["role"] == "user" else "Собеседник"
-        print(f"{i}. {role}: {msg['content']}")
-    print("=== КОНЕЦ ИСТОРИИ ===\n")
-
-
-def save_history(filename=None):
-    if not history:
-        print("История пуста, сохранять нечего.")
-        return
-    if filename is None:
-        filename = safe_input("Введите имя файла (c расширением): ")
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
-    print(f"История сохранена в {filename}")
-
-
-def load_history(filename=None):
-    global history
-    if filename is None:
-        filename = safe_input("Введите имя файла для загрузки: ").strip()
-        if not filename:
-            print("Имя файла не указано.")
-            return
-
-    try:
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        print(f"Файл '{filename}' не найден.")
-        return
-    except json.JSONDecodeError:
-        print(f"Файл '{filename}' содержит некорректный JSON.")
-        return
-
-    if not isinstance(data, list):
-        print("Данные в файле не являются списком.")
-        return
-    for i, msg in enumerate(data):
-        if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
-            print(
-                f"Сообщение #{i+1} имеет неверную структуру, загрузка прервана.")
-            return
-
-    if history:
-        print("Текущая история не пуста.")
-        answer = safe_input(
-            "Заменить текущую историю загруженной? (y/n): ").strip().lower()
-        if answer not in ("y", "да", "yes"):
-            print("Загрузка отменена.")
-            return
-
-    history = data
-    print(f"Загружено {len(history)} сообщений из файла '{filename}'.")
-
+from core import AIClient
+from core import Session
+from core import ChatApp
 
 if __name__ == "__main__":
-    print("Незримый собеседник (консоль).")
-    print("Команды: /history - показать историю, /save - сохранить в файл, "
-          "/load - загрузить из файла, /clear - очистить историю, выход - завершить.")
-    while True:
-        user_input = safe_input("> ")
-        if user_input.lower() in ("выход", "exit", "quit"):
-            break
-        if not user_input.strip():
-            continue
+    # Загружаем переменные окружения из .env
+    load_dotenv()
 
-        if user_input.startswith("/"):
-            cmd = user_input.lower()
-            if cmd == "/history":
-                print_history()
-            elif cmd == "/save":
-                save_history()
-            elif cmd == "/clear":
-                history.clear()
-                print("История очищена.")
-            elif cmd == "/load":
-                load_history()
-            else:
-                print("Неизвестная команда.")
-            continue
+    # Создаём AI-клиента с параметрами из окружения
+    client = AIClient(
+        api_key=os.getenv('API_KEY'),
+        base_url=os.getenv('BASE_URL'),
+        project=os.getenv('PROJECT'),
+        prompt_id=os.getenv('PROMPT_ID')
+    )
 
-        try:
-            reply = ask(user_input)
-            print(reply)
-        except Exception as e:
-            print(f"Ошибка: {e}")
+    # Создаём сессию с указанием файла для автоматического сохранения/загрузки
+    # Если файл не нужен — можно не передавать filename
+    session = Session(filename="history.json")
+
+    # Запускаем приложение
+    app = ChatApp(client, session)
+    app.run()
