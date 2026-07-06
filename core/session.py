@@ -38,7 +38,8 @@ class Session():
             print("История пуста, сохранять нечего.")
         return
         if self.filename is None:
-            self.filename = self._safe_input("Введите имя файла (c расширением): ")
+            self.filename = self._safe_input(
+                "Введите имя файла (c расширением): ")
         with open(self.filename, "w", encoding="utf-8") as f:
             json.dump(self.history, f, ensure_ascii=False, indent=2)
         print(f"История сохранена в {self.filename}")
@@ -72,7 +73,7 @@ class Session():
 
         if self.history:
             print("Текущая история не пуста.")
-            answer =self._safe_input(
+            answer = self._safe_input(
                 "Заменить текущую историю загруженной? (y/n): ").strip().lower()
             if answer not in ("y", "да", "yes"):
                 print("Загрузка отменена.")
@@ -86,20 +87,19 @@ class Session():
         """Печатает историю в консоль"""
         if not self.history:
             print("История пуста.")
-        return
+            return
         print("\n=== ИСТОРИЯ ДИАЛОГА ===")
-        for i, msg in enumerate(history, 1):
+        for i, msg in enumerate(self.history, 1):
             role = "Вы" if msg["role"] == "user" else "Собеседник"
             print(f"{i}. {role}: {msg['content']}")
             print("=== КОНЕЦ ИСТОРИИ ===\n")
 
     def is_empty(self):
         """Проверяет, пуста ли история"""
-        if self.history is None | self.history=[]:
+        if self.history is None | self.history = []:
             return True
         else:
             return False
-          
 
     def __len__(self):
         return len(self.history)
