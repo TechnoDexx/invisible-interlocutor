@@ -5,10 +5,12 @@ import os
 import sys
 from datetime import datetime
 from dotenv import load_dotenv
-from colorama import Fore,Back,Style,init
+from colorama import Fore, Back, Style, init
 init(autoreset=True)
 
 # ===== БЕЗОПАСНЫЙ ВВОД ДЛЯ DOCKER =====
+
+
 def safe_input(prompt=""):
     """Читает строку из stdin, корректно обрабатывая кодировку."""
     if prompt:
@@ -19,6 +21,7 @@ def safe_input(prompt=""):
         return raw.decode('utf-8').rstrip('\n')
     except UnicodeDecodeError:
         return raw.decode('utf-8', errors='replace').rstrip('\n')
+
 
 # ===== ЗАГРУЗКА ПЕРЕМЕННЫХ ИЗ .env =====
 load_dotenv()
@@ -32,13 +35,14 @@ client = openai.OpenAI(
 PROMPT_ID = os.getenv('PROMPT_ID')
 history = []
 
+
 def ask(prompt_text: str, retries: int = 3) -> str:
     """
     Отправляет запрос к модели с автоматическими повторными попытками
     при сбоях соединения или временных ошибках.
     """
     history.append({"role": "user", "content": prompt_text})
-    
+
     for attempt in range(retries):
         try:
             response = client.responses.create(
@@ -48,12 +52,13 @@ def ask(prompt_text: str, retries: int = 3) -> str:
             answer = response.output_text
             history.append({"role": "assistant", "content": answer})
             return Fore.GREEN+answer
-        
+
         except Exception as e:
             if attempt == retries - 1:
                 raise
             time.sleep(1)
             continue
+
 
 def print_history():
     if not history:
@@ -65,6 +70,7 @@ def print_history():
         print(f"{i}. {role}: {msg['content']}")
     print("=== КОНЕЦ ИСТОРИИ ===\n")
 
+
 def save_history(filename=None):
     if not history:
         print("История пуста, сохранять нечего.")
@@ -74,6 +80,7 @@ def save_history(filename=None):
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
     print(f"История сохранена в {filename}")
+
 
 def load_history(filename=None):
     global history
@@ -98,18 +105,21 @@ def load_history(filename=None):
         return
     for i, msg in enumerate(data):
         if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
-            print(f"Сообщение #{i+1} имеет неверную структуру, загрузка прервана.")
+            print(
+                f"Сообщение #{i+1} имеет неверную структуру, загрузка прервана.")
             return
 
     if history:
         print("Текущая история не пуста.")
-        answer = safe_input("Заменить текущую историю загруженной? (y/n): ").strip().lower()
+        answer = safe_input(
+            "Заменить текущую историю загруженной? (y/n): ").strip().lower()
         if answer not in ("y", "да", "yes"):
             print("Загрузка отменена.")
             return
 
     history = data
     print(f"Загружено {len(history)} сообщений из файла '{filename}'.")
+
 
 if __name__ == "__main__":
     print("Незримый собеседник (консоль).")
