@@ -5,10 +5,11 @@ from core.session import Session
 import os
 import uuid
 from dotenv import load_dotenv
-
+from flask_wtf import CSRFProtect
 load_dotenv()
 
 app = Flask(__name__)
+csrf=CSRFProtect(app)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Инициализация AI-клиента

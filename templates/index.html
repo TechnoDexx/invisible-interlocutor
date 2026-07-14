@@ -1,38 +1,44 @@
-{% extends "base.html" %}
-
-{% block title %}Чат{% endblock %}
-
-{% block content %}
-<div class="chat-box" id="chatBox" style="height: 60vh; overflow-y: auto;">
-    {% for message in history %}
-        <div class="message {{ message.role }}">{{ message.content }}</div>
-    {% endfor %}
+{% extends "base.html" %} {% block title %}Чат{% endblock %} {% block content %}
+<div class="chat-box" id="chatBox" style="height: 60vh; overflow-y: auto">
+  {% for message in history %}
+  <div class="message {{ message.role }}">{{ message.content }}</div>
+  {% endfor %}
 </div>
 
 <!-- Форма отправки сообщения (работает даже без JS) -->
 <form id="send-form" action="/send" method="post" class="row g-2 mt-3">
-    <div class="col-10">
-        <textarea id="msg-input" name="user_message" class="form-control bg-dark text-light border-0" rows="3" placeholder="Напишите что-нибудь..." autofocus></textarea>
-    </div>
-    <div class="col-2 d-flex align-items-end">
-        <button type="submit" class="btn btn-primary w-100" style="height: 100%;">Отправить</button>
-    </div>
+  <div class="col-10">
+    <textarea
+      id="msg-input"
+      name="user_message"
+      class="form-control bg-dark text-light border-0"
+      rows="3"
+      placeholder="Напишите что-нибудь..."
+      autofocus
+    ></textarea>
+  </div>
+  <div class="col-2 d-flex align-items-end">
+    <button type="submit" class="btn btn-primary w-100" style="height: 100%">
+      Отправить
+    </button>
+  </div>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 </form>
 
 <!-- Кнопки управления (с формами для работы без JS) -->
 <div class="row g-2 mt-2">
-    <div class="col-6">
-        <form id="save-form" action="/save" method="post" style="display: inline;">
-            <input type="hidden" name="filename" value="">
-            <button type="submit" class="btn btn-success w-100">💾 Сохранить</button>
-        </form>
-    </div>
-    <div class="col-6">
-        <form id="load-form" action="/load" method="post" style="display: inline;">
-            <input type="hidden" name="filename" value="">
-            <button type="submit" class="btn btn-warning w-100">📂 Загрузить</button>
-        </form>
-    </div>
+  <div class="col-6">
+    <form id="save-form" action="/save" method="post" style="display: inline">
+      <input type="hidden" name="filename" value="" />
+      <button type="submit" class="btn btn-success w-100">💾 Сохранить</button>
+    </form>
+  </div>
+  <div class="col-6">
+    <form id="load-form" action="/load" method="post" style="display: inline">
+      <input type="hidden" name="filename" value="" />
+      <button type="submit" class="btn btn-warning w-100">📂 Загрузить</button>
+    </form>
+  </div>
 </div>
 
 <!-- Кнопки авторизации (пока закомментированы) -->
@@ -46,108 +52,117 @@
     </div>
 </div>
 -->
-{% endblock %}
-
-{% block scripts %}
+{% endblock %} {% block scripts %}
 <script>
-    (function() {
-        // Обработка отправки сообщения
-        const sendForm = document.getElementById('send-form');
-        const msgInput = document.getElementById('msg-input');
-        const chatBox = document.getElementById('chatBox');
+  (function () {
+    // Обработка отправки сообщения
+    const sendForm = document.getElementById("send-form");
+    const msgInput = document.getElementById("msg-input");
+    const chatBox = document.getElementById("chatBox");
 
-        if (sendForm) {
-            sendForm.addEventListener('submit', async (e) => {
-                e.preventDefault(); // Отключаем обычную отправку
-                const text = msgInput.value.trim();
-                if (!text) return;
-                msgInput.value = '';
-                // Временно добавляем сообщение пользователя в чат
-                const userDiv = document.createElement('div');
-                userDiv.className = 'message user';
-                userDiv.textContent = text;
-                chatBox.appendChild(userDiv);
-                chatBox.scrollTop = chatBox.scrollHeight;
+    if (sendForm) {
+      sendForm.addEventListener("submit", async (e) => {
+        e.preventDefault(); // Отключаем обычную отправку
+        const text = msgInput.value.trim();
+        if (!text) return;
+        msgInput.value = "";
+        // Временно добавляем сообщение пользователя в чат
+        const userDiv = document.createElement("div");
+        userDiv.className = "message user";
+        userDiv.textContent = text;
+        chatBox.appendChild(userDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
 
-                try {
-                    const formData = new FormData(sendForm);
-                    const response = await fetch('/send', { method: 'POST', body: formData });
-                    const data = await response.json();
-                    if (data.reply) {
-                        const assistantDiv = document.createElement('div');
-                        assistantDiv.className = 'message assistant';
-                        assistantDiv.textContent = data.reply;
-                        chatBox.appendChild(assistantDiv);
-                        chatBox.scrollTop = chatBox.scrollHeight;
-                    } else {
-                        const errorDiv = document.createElement('div');
-                        errorDiv.className = 'message assistant';
-                        errorDiv.textContent = 'Ошибка: ' + (data.error || 'неизвестно');
-                        chatBox.appendChild(errorDiv);
-                        chatBox.scrollTop = chatBox.scrollHeight;
-                    }
-                } catch (err) {
-                    const errorDiv = document.createElement('div');
-                    errorDiv.className = 'message assistant';
-                    errorDiv.textContent = 'Ошибка соединения';
-                    chatBox.appendChild(errorDiv);
-                    chatBox.scrollTop = chatBox.scrollHeight;
-                }
-            });
+        try {
+          const formData = new FormData(sendForm);
+          const response = await fetch("/send", {
+            method: "POST",
+            body: formData,
+          });
+          const data = await response.json();
+          if (data.reply) {
+            const assistantDiv = document.createElement("div");
+            assistantDiv.className = "message assistant";
+            assistantDiv.textContent = data.reply;
+            chatBox.appendChild(assistantDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+          } else {
+            const errorDiv = document.createElement("div");
+            errorDiv.className = "message assistant";
+            errorDiv.textContent = "Ошибка: " + (data.error || "неизвестно");
+            chatBox.appendChild(errorDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+          }
+        } catch (err) {
+          const errorDiv = document.createElement("div");
+          errorDiv.className = "message assistant";
+          errorDiv.textContent = "Ошибка соединения";
+          chatBox.appendChild(errorDiv);
+          chatBox.scrollTop = chatBox.scrollHeight;
         }
+      });
+    }
 
-        // Обработка сохранения (с запросом имени файла)
-        const saveForm = document.getElementById('save-form');
-        if (saveForm) {
-            saveForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const filename = prompt('Введите имя файла для сохранения (или оставьте пустым):');
-                const hiddenInput = saveForm.querySelector('input[name="filename"]');
-                if (hiddenInput) {
-                    hiddenInput.value = filename || '';
-                }
-                try {
-                    const formData = new FormData(saveForm);
-                    const response = await fetch('/save', { method: 'POST', body: formData });
-                    const data = await response.json();
-                    alert(data.message || data.error || 'Готово');
-                } catch (err) {
-                    alert('Ошибка при сохранении');
-                }
-            });
+    // Обработка сохранения (с запросом имени файла)
+    const saveForm = document.getElementById("save-form");
+    if (saveForm) {
+      saveForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const filename = prompt(
+          "Введите имя файла для сохранения (или оставьте пустым):",
+        );
+        const hiddenInput = saveForm.querySelector('input[name="filename"]');
+        if (hiddenInput) {
+          hiddenInput.value = filename || "";
         }
+        try {
+          const formData = new FormData(saveForm);
+          const response = await fetch("/save", {
+            method: "POST",
+            body: formData,
+          });
+          const data = await response.json();
+          alert(data.message || data.error || "Готово");
+        } catch (err) {
+          alert("Ошибка при сохранении");
+        }
+      });
+    }
 
-        // Обработка загрузки
-        const loadForm = document.getElementById('load-form');
-        if (loadForm) {
-            loadForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const filename = prompt('Введите имя файла для загрузки:');
-                if (!filename) return;
-                const hiddenInput = loadForm.querySelector('input[name="filename"]');
-                if (hiddenInput) {
-                    hiddenInput.value = filename;
-                }
-                try {
-                    const formData = new FormData(loadForm);
-                    const response = await fetch('/load', { method: 'POST', body: formData });
-                    const data = await response.json();
-                    if (data.message) {
-                        alert(data.message);
-                        location.reload(); // перезагружаем страницу для обновления истории
-                    } else {
-                        alert(data.error || 'Ошибка загрузки');
-                    }
-                } catch (err) {
-                    alert('Ошибка соединения');
-                }
-            });
+    // Обработка загрузки
+    const loadForm = document.getElementById("load-form");
+    if (loadForm) {
+      loadForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const filename = prompt("Введите имя файла для загрузки:");
+        if (!filename) return;
+        const hiddenInput = loadForm.querySelector('input[name="filename"]');
+        if (hiddenInput) {
+          hiddenInput.value = filename;
         }
+        try {
+          const formData = new FormData(loadForm);
+          const response = await fetch("/load", {
+            method: "POST",
+            body: formData,
+          });
+          const data = await response.json();
+          if (data.message) {
+            alert(data.message);
+            location.reload(); // перезагружаем страницу для обновления истории
+          } else {
+            alert(data.error || "Ошибка загрузки");
+          }
+        } catch (err) {
+          alert("Ошибка соединения");
+        }
+      });
+    }
 
-        // Автофокус на поле ввода
-        if (msgInput) {
-            msgInput.focus();
-        }
-    })();
+    // Автофокус на поле ввода
+    if (msgInput) {
+      msgInput.focus();
+    }
+  })();
 </script>
 {% endblock %}
