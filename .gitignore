@@ -241,9 +241,7 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-basic templates with Bootsrap.zip
-Задачи на ближайшее время.md
-Компиляторы в консольное приложение.md
+*.zip
 *.json
 *.md
 .gigaide
