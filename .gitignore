@@ -244,28 +244,12 @@ cython_debug/
 basic templates with Bootsrap.zip
 Задачи на ближайшее время.md
 Компиляторы в консольное приложение.md
-history_one.json
-history_three.json
-history_two.json
+*.json
+*.md
 .gigaide
 .idea/.gigateam
 .idea/codeStyles
 .idea/inspectionProfiles
 .idea/vcs.xml
-history_last.json
-Самое важное (итог одной беседы).
-Самое важное (итог одной беседы).md
-history_condenced.json
-history_last_(1).json
 core/session.zip
-А в ChatApp AIClient вызывать также как в main?.md
-А в ChatApp AIClient вызывать также как в main?.md
-А в ChatApp AIClient вызывать также как в main?.md
-А в ChatApp AIClient вызывать также как в main?.md
-Что дальше?.md
-
-Что дальше?.md
-
-Что дальше?.md
-history.json
-my_current_dialog.json
+last-history.json
