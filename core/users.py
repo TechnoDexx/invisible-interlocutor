@@ -5,15 +5,19 @@ import os
 import time
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 from dotenv import load_dotenv
 from ydb import Driver
 from ydb.credentials import AccessTokenCredentials
 =======
+=======
+>>>>>>> fa7b40a (Add auth)
 import uuid
 from dotenv import load_dotenv
 from ydb import Driver
 from ydb.credentials import AccessTokenCredentials
 from flask_login import UserMixin
+<<<<<<< HEAD
 >>>>>>> 153e734 (Add auth)
 =======
 import uuid
@@ -22,6 +26,8 @@ from ydb import Driver
 from ydb.credentials import AccessTokenCredentials
 from flask_login import UserMixin
 >>>>>>> 730e327 (Add auth)
+=======
+>>>>>>> fa7b40a (Add auth)
 
 load_dotenv()
 
@@ -46,8 +52,6 @@ class User(UserMixin):
 
 >>>>>>> 730e327 (Add auth)
 
-<<<<<<< HEAD
-=======
 
 class User(UserMixin):
     def __init__(self, user_id, username, password_hash, created_at, email=None):
@@ -56,7 +60,7 @@ class User(UserMixin):
         self.username = username
         self.password_hash = password_hash
         self.created_at = created_at
-        self.email = email  # пока не используем, но для будущего
+        self.email = email  # задел на будущее
 
     def get_id(self):
         return str(self.user_id)
@@ -66,7 +70,6 @@ class User(UserMixin):
         return True
 
 
->>>>>>> 153e734 (Add auth)
 class Users:
     def __init__(self):
         self.token_file = os.getenv("YDB_TOKEN_FILE", "/home/itshark/my_token")
@@ -88,11 +91,14 @@ class Users:
     def _get_session(self):
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
         """Создаёт сессию с .create() и повторными попытками."""
 =======
 >>>>>>> 153e734 (Add auth)
 =======
 >>>>>>> 730e327 (Add auth)
+=======
+>>>>>>> fa7b40a (Add auth)
         for attempt in range(3):
             try:
                 session = self.driver.table_client.session().create()
@@ -120,13 +126,17 @@ class Users:
             pass
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> fa7b40a (Add auth)
         try:
             session.execute_scheme(
                 "CREATE INDEX username_idx ON users (username);")
             print("✅ Индекс на username создан")
         except Exception:
             pass
+<<<<<<< HEAD
 >>>>>>> 153e734 (Add auth)
 =======
         try:
@@ -135,16 +145,21 @@ class Users:
         except Exception:
             pass
 >>>>>>> 730e327 (Add auth)
+=======
+>>>>>>> fa7b40a (Add auth)
 
     def _hash_password(self, password):
         return hashlib.sha256(password.encode()).hexdigest()
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     def create_user(self, username, password):
 =======
 =======
 >>>>>>> 730e327 (Add auth)
+=======
+>>>>>>> fa7b40a (Add auth)
     def _user_exists(self, session, username):
         query = """
             DECLARE $username AS Text;
@@ -159,24 +174,28 @@ class Users:
 
     def create_user(self, username, password, email=None):
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 153e734 (Add auth)
 =======
 >>>>>>> 730e327 (Add auth)
+=======
+>>>>>>> fa7b40a (Add auth)
         session_check = self._get_session()
         if self._user_exists(session_check, username):
             raise Exception("Пользователь с таким именем уже существует")
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
         user_id = str(uuid.uuid4())
 >>>>>>> 730e327 (Add auth)
         session_insert = self._get_session()
 =======
+=======
+>>>>>>> fa7b40a (Add auth)
         user_id = str(uuid.uuid4())
         session_insert = self._get_session()
-        # Пока email не используем, но поле зарезервируем
->>>>>>> 153e734 (Add auth)
         query = """
             DECLARE $user_id AS Text;
             DECLARE $username AS Text;
@@ -200,6 +219,7 @@ class Users:
         tx.commit()
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
         print(f"✅ Пользователь {username} создан")
 =======
         print(f"✅ Пользователь {username} создан с ID {user_id}")
@@ -221,6 +241,10 @@ class Users:
         print(f"✅ Пользователь {username} создан с ID {user_id}")
         return user_id
 >>>>>>> 730e327 (Add auth)
+=======
+        print(f"✅ Пользователь {username} создан с ID {user_id}")
+        return user_id
+>>>>>>> fa7b40a (Add auth)
 
     def get_user(self, username):
         session = self._get_session()
@@ -236,10 +260,13 @@ class Users:
         rows = result[0].rows
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
         return rows[0] if rows else None
 =======
 =======
 >>>>>>> 730e327 (Add auth)
+=======
+>>>>>>> fa7b40a (Add auth)
         if rows:
             row = rows[0]
             return User(
@@ -272,9 +299,12 @@ class Users:
             )
         return None
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 153e734 (Add auth)
 =======
 >>>>>>> 730e327 (Add auth)
+=======
+>>>>>>> fa7b40a (Add auth)
 
     def verify_user(self, username, password):
         user = self.get_user(username)
