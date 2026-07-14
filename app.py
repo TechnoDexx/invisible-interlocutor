@@ -61,17 +61,10 @@ def send():
 
     session = get_session(session_id)
     user_message = request.form.get('user_message', '').strip()
-<<<<<<< HEAD
-    
-    print("=== FORM DATA ===")
-    print(request.form)
-    print("KEYS:", list(request.form.keys()))
-=======
     if debug:
         print("=== FORM DATA ===")
         print(request.form)
         print("KEYS:", list(request.form.keys()))
->>>>>>> 90ac156 (Add webface)
     if not user_message:
         return jsonify({'error': 'Сообщение пустое'}), 400
 
