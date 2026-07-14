@@ -1,3 +1,4 @@
 openai
 colorama
 python-dotenv
+flask

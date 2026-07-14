@@ -3,20 +3,42 @@
 {% block title %}Чат{% endblock %}
 
 {% block content %}
-<div class="chat-box" id="chatBox">
+<div class="chat-box" id="chatBox" style="height: 60vh; overflow-y: auto;">
     {% for message in history %}
         <div class="message {{ message.role }}">{{ message.content }}</div>
     {% endfor %}
 </div>
 
-<div id="input-area" class="row g-2">
+<div id="input-area" class="row g-2 mt-3">
     <div class="col-10">
-        <input type="text" id="msg-input" class="form-control bg-dark text-light border-0" placeholder="Напишите что-нибудь..." autofocus>
+        <textarea id="msg-input" class="form-control bg-dark text-light border-0" rows="3" placeholder="Напишите что-нибудь..." autofocus></textarea>
     </div>
-    <div class="col-2">
-        <button id="send-btn" class="btn btn-primary w-100">Отправить</button>
+    <div class="col-2 d-flex align-items-end">
+        <button id="send-btn" class="btn btn-primary w-100" style="height: 100%;">Отправить</button>
     </div>
 </div>
+
+<!-- Кнопки управления (опционально, можно добавить позже) -->
+<div class="row g-2 mt-2">
+    <div class="col-6">
+        <button id="save-btn" class="btn btn-success w-100">💾 Сохранить</button>
+    </div>
+    <div class="col-6">
+        <button id="load-btn" class="btn btn-warning w-100">📂 Загрузить</button>
+    </div>
+</div>
+
+<!-- Кнопки авторизации (пока закомментированы) -->
+<!--
+<div class="row g-2 mt-2">
+    <div class="col-6">
+        <a href="/login" class="btn btn-outline-primary w-100">Войти</a>
+    </div>
+    <div class="col-6">
+        <a href="/register" class="btn btn-outline-secondary w-100">Зарегистрироваться</a>
+    </div>
+</div>
+-->
 {% endblock %}
 
 {% block scripts %}
@@ -24,6 +46,8 @@
     const input = document.getElementById('msg-input');
     const sendBtn = document.getElementById('send-btn');
     const chatBox = document.getElementById('chatBox');
+    const saveBtn = document.getElementById('save-btn');
+    const loadBtn = document.getElementById('load-btn');
 
     function appendMessage(text, role) {
         const div = document.createElement('div');
@@ -54,6 +78,40 @@
     }
 
     sendBtn.addEventListener('click', sendMessage);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    // Сохранение (простой вариант)
+    saveBtn.addEventListener('click', async () => {
+        const filename = prompt('Введите имя файла для сохранения (или оставьте пустым):');
+        const formData = new FormData();
+        if (filename) formData.append('filename', filename);
+        const response = await fetch('/save', { method: 'POST', body: formData });
+        const data = await response.json();
+        alert(data.message || data.error);
+    });
+
+    // Загрузка
+    loadBtn.addEventListener('click', async () => {
+        const filename = prompt('Введите имя файла для загрузки:');
+        if (!filename) return;
+        const formData = new FormData();
+        formData.append('filename', filename);
+        const response = await fetch('/load', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (data.message) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert(data.error);
+        }
+    });
+
+    // Автоматическая фокусировка
+    input.focus();
 </script>
 {% endblock %}
