@@ -7,7 +7,7 @@ import uuid
 from dotenv import load_dotenv
 from flask_wtf import CSRFProtect
 load_dotenv()
-
+debug=os.getenv('DEBUG', False)
 app = Flask(__name__)
 csrf=CSRFProtect(app)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -46,6 +46,10 @@ def index():
 
 @app.route('/send', methods=['POST'])
 def send():
+    if debug:
+        print("=== REQUEST ===")
+        print("METHOD:", request.method)
+        print("HEADERS:", request.headers)
     """Обрабатывает сообщение пользователя и возвращает ответ AI."""
     session_id = request.cookies.get('session_id')
     if not session_id:
@@ -53,6 +57,10 @@ def send():
 
     session = get_session(session_id)
     user_message = request.form.get('user_message', '').strip()
+    
+    print("=== FORM DATA ===")
+    print(request.form)
+    print("KEYS:", list(request.form.keys()))
     if not user_message:
         return jsonify({'error': 'Сообщение пустое'}), 400
 

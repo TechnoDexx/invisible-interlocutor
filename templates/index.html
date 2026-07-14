@@ -5,27 +5,18 @@
   {% endfor %}
 </div>
 
-<!-- Форма отправки сообщения (работает даже без JS) -->
+<!-- Форма отправки сообщения -->
 <form id="send-form" action="/send" method="post" class="row g-2 mt-3">
-  <div class="col-10">
-    <textarea
-      id="msg-input"
-      name="user_message"
-      class="form-control bg-dark text-light border-0"
-      rows="3"
-      placeholder="Напишите что-нибудь..."
-      autofocus
-    ></textarea>
-  </div>
-  <div class="col-2 d-flex align-items-end">
-    <button type="submit" class="btn btn-primary w-100" style="height: 100%">
-      Отправить
-    </button>
-  </div>
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <div class="col-10">
+        <textarea id="msg-input" name="user_message" class="form-control bg-dark text-light border-0" rows="3" placeholder="Напишите что-нибудь..." autofocus></textarea>
+    </div>
+    <div class="col-2 d-flex align-items-end">
+        <button type="submit" class="btn btn-primary w-100" style="height: 100%;">Отправить</button>
+    </div>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 </form>
 
-<!-- Кнопки управления (с формами для работы без JS) -->
+<!-- Кнопки управления -->
 <div class="row g-2 mt-2">
   <div class="col-6">
     <form id="save-form" action="/save" method="post" style="display: inline">
@@ -40,129 +31,118 @@
     </form>
   </div>
 </div>
+{% endblock %}
 
-<!-- Кнопки авторизации (пока закомментированы) -->
-<!--
-<div class="row g-2 mt-2">
-    <div class="col-6">
-        <a href="/login" class="btn btn-outline-primary w-100">Войти</a>
-    </div>
-    <div class="col-6">
-        <a href="/register" class="btn btn-outline-secondary w-100">Зарегистрироваться</a>
-    </div>
-</div>
--->
-{% endblock %} {% block scripts %}
+{% block scripts %}
 <script>
-  (function () {
-    // Обработка отправки сообщения
-    const sendForm = document.getElementById("send-form");
-    const msgInput = document.getElementById("msg-input");
-    const chatBox = document.getElementById("chatBox");
+    (function() {
+        const sendForm = document.getElementById('send-form');
+        const msgInput = document.getElementById('msg-input');
+        const chatBox = document.getElementById('chatBox');
 
-    if (sendForm) {
-      sendForm.addEventListener("submit", async (e) => {
-        e.preventDefault(); // Отключаем обычную отправку
-        const text = msgInput.value.trim();
-        if (!text) return;
-        msgInput.value = "";
-        // Временно добавляем сообщение пользователя в чат
-        const userDiv = document.createElement("div");
-        userDiv.className = "message user";
-        userDiv.textContent = text;
-        chatBox.appendChild(userDiv);
-        chatBox.scrollTop = chatBox.scrollHeight;
+        if (sendForm) {
+            sendForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
 
-        try {
-          const formData = new FormData(sendForm);
-          const response = await fetch("/send", {
-            method: "POST",
-            body: formData,
-          });
-          const data = await response.json();
-          if (data.reply) {
-            const assistantDiv = document.createElement("div");
-            assistantDiv.className = "message assistant";
-            assistantDiv.textContent = data.reply;
-            chatBox.appendChild(assistantDiv);
-            chatBox.scrollTop = chatBox.scrollHeight;
-          } else {
-            const errorDiv = document.createElement("div");
-            errorDiv.className = "message assistant";
-            errorDiv.textContent = "Ошибка: " + (data.error || "неизвестно");
-            chatBox.appendChild(errorDiv);
-            chatBox.scrollTop = chatBox.scrollHeight;
-          }
-        } catch (err) {
-          const errorDiv = document.createElement("div");
-          errorDiv.className = "message assistant";
-          errorDiv.textContent = "Ошибка соединения";
-          chatBox.appendChild(errorDiv);
-          chatBox.scrollTop = chatBox.scrollHeight;
-        }
-      });
-    }
+                const text = msgInput.value.trim();
+                if (!text) return;
 
-    // Обработка сохранения (с запросом имени файла)
-    const saveForm = document.getElementById("save-form");
-    if (saveForm) {
-      saveForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const filename = prompt(
-          "Введите имя файла для сохранения (или оставьте пустым):",
-        );
-        const hiddenInput = saveForm.querySelector('input[name="filename"]');
-        if (hiddenInput) {
-          hiddenInput.value = filename || "";
-        }
-        try {
-          const formData = new FormData(saveForm);
-          const response = await fetch("/save", {
-            method: "POST",
-            body: formData,
-          });
-          const data = await response.json();
-          alert(data.message || data.error || "Готово");
-        } catch (err) {
-          alert("Ошибка при сохранении");
-        }
-      });
-    }
+                // 🔧 ИСПРАВЛЕНИЕ: FormData создаётся ДО очистки поля
+                // Раньше мы сначала очищали поле, а потом создавали FormData,
+                // из-за чего в formData попадало пустое значение 'user_message'.
+                const formData = new FormData(sendForm);
 
-    // Обработка загрузки
-    const loadForm = document.getElementById("load-form");
-    if (loadForm) {
-      loadForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const filename = prompt("Введите имя файла для загрузки:");
-        if (!filename) return;
-        const hiddenInput = loadForm.querySelector('input[name="filename"]');
-        if (hiddenInput) {
-          hiddenInput.value = filename;
-        }
-        try {
-          const formData = new FormData(loadForm);
-          const response = await fetch("/load", {
-            method: "POST",
-            body: formData,
-          });
-          const data = await response.json();
-          if (data.message) {
-            alert(data.message);
-            location.reload(); // перезагружаем страницу для обновления истории
-          } else {
-            alert(data.error || "Ошибка загрузки");
-          }
-        } catch (err) {
-          alert("Ошибка соединения");
-        }
-      });
-    }
+                // Теперь можно очистить поле
+                msgInput.value = '';
 
-    // Автофокус на поле ввода
-    if (msgInput) {
-      msgInput.focus();
-    }
-  })();
+                // Добавляем сообщение пользователя в чат
+                const userDiv = document.createElement('div');
+                userDiv.className = 'message user';
+                userDiv.textContent = text;
+                chatBox.appendChild(userDiv);
+                chatBox.scrollTop = chatBox.scrollHeight;
+
+                try {
+                    const response = await fetch('/send', {
+                        method: 'POST',
+                        body: formData,
+                    });
+                    const data = await response.json();
+
+                    if (data.reply) {
+                        const assistantDiv = document.createElement('div');
+                        assistantDiv.className = 'message assistant';
+                        assistantDiv.textContent = data.reply;
+                        chatBox.appendChild(assistantDiv);
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                    } else {
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'message assistant';
+                        errorDiv.textContent = 'Ошибка: ' + (data.error || 'неизвестно');
+                        chatBox.appendChild(errorDiv);
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                    }
+                } catch (err) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'message assistant';
+                    errorDiv.textContent = 'Ошибка соединения';
+                    chatBox.appendChild(errorDiv);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
+            });
+        }
+
+        // Обработка сохранения
+        const saveForm = document.getElementById('save-form');
+        if (saveForm) {
+            saveForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const filename = prompt('Введите имя файла для сохранения (или оставьте пустым):');
+                const hiddenInput = saveForm.querySelector('input[name="filename"]');
+                if (hiddenInput) {
+                    hiddenInput.value = filename || '';
+                }
+                try {
+                    const formData = new FormData(saveForm);
+                    const response = await fetch('/save', { method: 'POST', body: formData });
+                    const data = await response.json();
+                    alert(data.message || data.error || 'Готово');
+                } catch (err) {
+                    alert('Ошибка при сохранении');
+                }
+            });
+        }
+
+        // Обработка загрузки
+        const loadForm = document.getElementById('load-form');
+        if (loadForm) {
+            loadForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const filename = prompt('Введите имя файла для загрузки:');
+                if (!filename) return;
+                const hiddenInput = loadForm.querySelector('input[name="filename"]');
+                if (hiddenInput) {
+                    hiddenInput.value = filename;
+                }
+                try {
+                    const formData = new FormData(loadForm);
+                    const response = await fetch('/load', { method: 'POST', body: formData });
+                    const data = await response.json();
+                    if (data.message) {
+                        alert(data.message);
+                        location.reload();
+                    } else {
+                        alert(data.error || 'Ошибка загрузки');
+                    }
+                } catch (err) {
+                    alert('Ошибка соединения');
+                }
+            });
+        }
+
+        if (msgInput) {
+            msgInput.focus();
+        }
+    })();
 </script>
 {% endblock %}
