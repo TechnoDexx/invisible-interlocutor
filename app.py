@@ -16,7 +16,6 @@ debug = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes')
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-<<<<<<< HEAD
 # ===== ИНИЦИАЛИЗАЦИЯ =====
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
@@ -29,10 +28,7 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
 
-<<<<<<< HEAD
 # ===== ЗАГРУЗЧИК ПОЛЬЗОВАТЕЛЯ =====
-=======
->>>>>>> fa7b40a (Add auth)
 @login_manager.user_loader
 def load_user(user_id):
     return users_db.get_user(user_id)
@@ -44,10 +40,7 @@ ai_client = AIClient(
     prompt_id=os.getenv('PROMPT_ID')
 )
 
-<<<<<<< HEAD
 # ===== ХРАНИЛИЩЕ СЕССИЙ (в памяти) =====
-=======
->>>>>>> fa7b40a (Add auth)
 sessions = {}
 
 def get_session(session_id):
@@ -56,7 +49,6 @@ def get_session(session_id):
     return sessions[session_id]
 
 <<<<<<< HEAD
-# ===== ГЛАВНАЯ СТРАНИЦА =====
 =======
 >>>>>>> fa7b40a (Add auth)
 @app.route('/')
@@ -74,11 +66,8 @@ def index():
     response.set_cookie('session_id', session_id, max_age=60*60*24*30)
     return response
 
-<<<<<<< HEAD
 
 
-=======
->>>>>>> fa7b40a (Add auth)
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -93,10 +82,7 @@ def register():
             return f'Ошибка: {e}', 400
     return render_template('register.html')
 
-<<<<<<< HEAD
 # ===== ВХОД =====
-=======
->>>>>>> fa7b40a (Add auth)
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -113,19 +99,13 @@ def login():
             return 'Неверный логин или пароль', 401
     return render_template('login.html')
 
-<<<<<<< HEAD
 # ===== ВЫХОД =====
-=======
->>>>>>> fa7b40a (Add auth)
 @app.route('/logout')
 def logout():
     logout_user()
     return redirect('/')
 
-<<<<<<< HEAD
 # ===== ОТПРАВКА СООБЩЕНИЯ =====
-=======
->>>>>>> fa7b40a (Add auth)
 @app.route('/send', methods=['POST'])
 def send():
     if debug:
@@ -155,10 +135,7 @@ def send():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-<<<<<<< HEAD
 # ===== СОХРАНЕНИЕ ИСТОРИИ =====
-=======
->>>>>>> fa7b40a (Add auth)
 @app.route('/save', methods=['POST'])
 def save_history():
     session_id = request.cookies.get('session_id')
@@ -178,13 +155,9 @@ def save_history():
         return jsonify({'message': f'История сохранена в {filename}'})
     except Exception as e:
         return jsonify({'error': f'Ошибка: {str(e)}'}), 500
-<<<<<<< HEAD
         return jsonify({'error': f'Ошибка: {str(e)}'}), 500
 
 # ===== ЗАГРУЗКА ИСТОРИИ =====
-=======
-
->>>>>>> fa7b40a (Add auth)
 @app.route('/load', methods=['POST'])
 def load_history():
     session_id = request.cookies.get('session_id')
@@ -207,8 +180,8 @@ def load_history():
         return jsonify({'error': f'Файл {filename} не найден'}), 404
     except Exception as e:
         return jsonify({'error': f'Ошибка: {str(e)}'}), 500
+        return jsonify({'error': f'Ошибка: {str(e)}'}), 500
 
-<<<<<<< HEAD
 
 =======
 >>>>>>> fa7b40a (Add auth)
