@@ -3,16 +3,24 @@ from flask import Flask, render_template, request, jsonify, make_response, redir
 from core.ai_client import AIClient
 from core.session import Session
 from core.users import Users
+from core.users import Users
 import os
 import uuid
 from dotenv import load_dotenv
 from flask_wtf import CSRFProtect
 from flask_login import LoginManager, login_user, logout_user, current_user
+from flask_login import LoginManager, login_user, logout_user, current_user
 load_dotenv()
 
 debug = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes')
 
+
 app = Flask(__name__)
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login"
+users_db = Users()
+csrf = CSRFProtect(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
@@ -32,6 +40,7 @@ ai_client = AIClient(
 sessions = {}
 
 
+
 def get_session(session_id):
     """Возвращает сессию по ID, создаёт новую при необходимости."""
     if session_id not in sessions:
@@ -44,8 +53,15 @@ def load_user(user_id):
     return users_db.get_user(user_id)
 
 
+
+@login_manager.user_loader
+def load_user(user_id):
+    return users_db.get_user(user_id)
+
+
 @app.route('/')
 def index():
+    username = current_user.username if current_user.is_authenticated else None
     username = current_user.username if current_user.is_authenticated else None
     session_id = request.cookies.get('session_id')
     if not session_id:
@@ -55,9 +71,11 @@ def index():
     session = get_session(session_id)
     history = session.history
 
-    response = make_response(render_template('index.html', history=history, username=username))
+    response = make_response(render_template(
+        'index.html', history=history, username=username))
     response.set_cookie('session_id', session_id, max_age=60*60*24*30)
     return response
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -77,6 +95,21 @@ def login():
 def logout():
     logout_user()  # <-- вместо set_cookie(expires=0)
     return redirect('/')
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        if not username or not password:
+            return 'Имя пользователя и пароль обязательны', 400
+        try:
+            users_db.create_user(username, password)
+            return redirect('/login')
+        except Exception as e:
+            return f'Ошибка: {e}', 400
+    return render_template('register.html')
 
 
 @app.route('/send', methods=['POST'])
@@ -109,6 +142,7 @@ def send():
         return jsonify({'error': str(e)}), 500
 
 
+
 @app.route('/save', methods=['POST'])
 def save_history():
     """Сохраняет историю текущей сессии в файл."""
@@ -130,6 +164,7 @@ def save_history():
         return jsonify({'message': f'История сохранена в {filename}'})
     except Exception as e:
         return jsonify({'error': f'Ошибка при сохранении: {str(e)}'}), 500
+
 
 
 @app.route('/load', methods=['POST'])
@@ -162,6 +197,8 @@ def load_history():
         return jsonify({'error': f'Ошибка при загрузке: {str(e)}'}), 500
 
 
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     app.run(debug=True, host='0.0.0.0', port=port)
+
