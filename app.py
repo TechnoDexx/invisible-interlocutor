@@ -21,7 +21,6 @@ app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 # ===== ИНИЦИАЛИЗАЦИЯ =====
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# ===== ИНИЦИАЛИЗАЦИЯ =====
 csrf = CSRFProtect(app)
 users_db = Users()
 
@@ -32,14 +31,10 @@ login_manager.init_app(app)
 login_manager.login_view = "login"
 
 # ===== ЗАГРУЗЧИК ПОЛЬЗОВАТЕЛЯ =====
-
-
 @login_manager.user_loader
 def load_user(user_id):
-    return users_db.get_user_by_id(user_id)
+    return users_db.get_user(user_id)
 
-
-# ===== AI КЛИЕНТ =====
 ai_client = AIClient(
     api_key=os.getenv('API_KEY'),
     base_url=os.getenv('BASE_URL'),
@@ -47,7 +42,6 @@ ai_client = AIClient(
     prompt_id=os.getenv('PROMPT_ID')
 )
 
-# ===== ХРАНИЛИЩЕ СЕССИЙ (в памяти) =====
 # ===== ХРАНИЛИЩЕ СЕССИЙ (в памяти) =====
 sessions = {}
 
@@ -58,8 +52,6 @@ def get_session(session_id):
     return sessions[session_id]
 
 # ===== ГЛАВНАЯ СТРАНИЦА =====
-
-
 @app.route('/')
 def index():
     username = current_user.username if current_user.is_authenticated else None
@@ -75,7 +67,6 @@ def index():
     response.set_cookie('session_id', session_id, max_age=60*60*24*30)
     return response
 
-# ===== РЕГИСТРАЦИЯ =====
 
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -93,8 +84,6 @@ def register():
     return render_template('register.html')
 
 # ===== ВХОД =====
-
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -112,16 +101,12 @@ def login():
     return render_template('login.html')
 
 # ===== ВЫХОД =====
-
-
 @app.route('/logout')
 def logout():
     logout_user()
     return redirect('/')
 
 # ===== ОТПРАВКА СООБЩЕНИЯ =====
-
-
 @app.route('/send', methods=['POST'])
 def send():
     if debug:
@@ -153,8 +138,6 @@ def send():
         return jsonify({'error': str(e)}), 500
 
 # ===== СОХРАНЕНИЕ ИСТОРИИ =====
-
-
 @app.route('/save', methods=['POST'])
 def save_history():
     session_id = request.cookies.get('session_id')
@@ -178,8 +161,6 @@ def save_history():
         return jsonify({'error': f'Ошибка: {str(e)}'}), 500
 
 # ===== ЗАГРУЗКА ИСТОРИИ =====
-
-
 @app.route('/load', methods=['POST'])
 def load_history():
     session_id = request.cookies.get('session_id')
@@ -208,7 +189,6 @@ def load_history():
         return jsonify({'error': f'Ошибка: {str(e)}'}), 500
 
 
-# ===== ЗАПУСК =====
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     app.run(debug=True, host='0.0.0.0', port=port)
