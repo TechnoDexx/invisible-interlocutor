@@ -2,16 +2,16 @@
 import datetime
 import hashlib
 import os
+import time
 from dotenv import load_dotenv
 from ydb import Driver
 from ydb.credentials import AccessTokenCredentials
-from flask_login import UserMixin
+
 load_dotenv()
 
 
-class Users(UserMixin):
+class Users:
     def __init__(self):
-        """Инициализация: загружает параметры из .env и подключается к YDB."""
         self.token_file = os.getenv("YDB_TOKEN_FILE", "/home/itshark/my_token")
         self.endpoint = os.getenv(
             "YDB_ENDPOINT", "grpcs://ydb.serverless.yandexcloud.net:2135")
@@ -27,10 +27,23 @@ class Users(UserMixin):
             credentials=AccessTokenCredentials(token)
         )
         self.driver.wait(timeout=10)
+        time.sleep(1)
         self._ensure_table_exists()
 
+    def _get_session(self):
+        """Создаёт сессию с .create() и повторными попытками."""
+        for attempt in range(3):
+            try:
+                session = self.driver.table_client.session().create()
+                return session
+            except Exception as e:
+                if attempt == 2:
+                    raise
+                time.sleep(0.5)
+        return None
+
     def _ensure_table_exists(self):
-        session = self.driver.table_client.session().create()
+        session = self._get_session()
         try:
             session.execute_scheme("""
                 CREATE TABLE users (
@@ -43,15 +56,17 @@ class Users(UserMixin):
             """)
             print("✅ Таблица users создана")
         except Exception:
-            pass  # таблица уже существует
-        finally:
-            session.close()
+            pass
 
     def _hash_password(self, password):
         return hashlib.sha256(password.encode()).hexdigest()
 
     def create_user(self, username, password):
-        session = self.driver.table_client.session().create()
+        session_check = self._get_session()
+        if self._user_exists(session_check, username):
+            raise Exception("Пользователь с таким именем уже существует")
+
+        session_insert = self._get_session()
         query = """
             DECLARE $user_id AS Text;
             DECLARE $username AS Text;
@@ -61,8 +76,8 @@ class Users(UserMixin):
             UPSERT INTO users (user_id, username, password_hash, created_at)
             VALUES ($user_id, $username, $password_hash, $created_at);
         """
-        prepared = session.prepare(query)
-        tx = session.transaction()
+        prepared = session_insert.prepare(query)
+        tx = session_insert.transaction()
         tx.execute(
             prepared,
             {
@@ -73,11 +88,22 @@ class Users(UserMixin):
             }
         )
         tx.commit()
-        session.close()
         print(f"✅ Пользователь {username} создан")
 
+    def _user_exists(self, session, username):
+        query = """
+            DECLARE $username AS Text;
+            SELECT user_id FROM users
+            WHERE username = $username;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        result = tx.execute(prepared, {"$username": username})
+        rows = result[0].rows
+        return len(rows) > 0
+
     def get_user(self, username):
-        session = self.driver.table_client.session().create()
+        session = self._get_session()
         query = """
             DECLARE $username AS Text;
             SELECT user_id, username, password_hash, created_at
@@ -88,7 +114,6 @@ class Users(UserMixin):
         tx = session.transaction()
         result = tx.execute(prepared, {"$username": username})
         rows = result[0].rows
-        session.close()
         return rows[0] if rows else None
 
     def verify_user(self, username, password):
@@ -96,9 +121,6 @@ class Users(UserMixin):
         if user:
             return user["password_hash"] == self._hash_password(password)
         return False
-
-    def get_id(self):
-        return self.user_id
 
     def close(self):
         self.driver.stop()
