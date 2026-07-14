@@ -9,22 +9,29 @@
     {% endfor %}
 </div>
 
-<div id="input-area" class="row g-2 mt-3">
+<!-- Форма отправки сообщения (работает даже без JS) -->
+<form id="send-form" action="/send" method="post" class="row g-2 mt-3">
     <div class="col-10">
-        <textarea id="msg-input" class="form-control bg-dark text-light border-0" rows="3" placeholder="Напишите что-нибудь..." autofocus></textarea>
+        <textarea id="msg-input" name="user_message" class="form-control bg-dark text-light border-0" rows="3" placeholder="Напишите что-нибудь..." autofocus></textarea>
     </div>
     <div class="col-2 d-flex align-items-end">
-        <button id="send-btn" class="btn btn-primary w-100" style="height: 100%;">Отправить</button>
+        <button type="submit" class="btn btn-primary w-100" style="height: 100%;">Отправить</button>
     </div>
-</div>
+</form>
 
-<!-- Кнопки управления (опционально, можно добавить позже) -->
+<!-- Кнопки управления (с формами для работы без JS) -->
 <div class="row g-2 mt-2">
     <div class="col-6">
-        <button id="save-btn" class="btn btn-success w-100">💾 Сохранить</button>
+        <form id="save-form" action="/save" method="post" style="display: inline;">
+            <input type="hidden" name="filename" value="">
+            <button type="submit" class="btn btn-success w-100">💾 Сохранить</button>
+        </form>
     </div>
     <div class="col-6">
-        <button id="load-btn" class="btn btn-warning w-100">📂 Загрузить</button>
+        <form id="load-form" action="/load" method="post" style="display: inline;">
+            <input type="hidden" name="filename" value="">
+            <button type="submit" class="btn btn-warning w-100">📂 Загрузить</button>
+        </form>
     </div>
 </div>
 
@@ -43,75 +50,104 @@
 
 {% block scripts %}
 <script>
-    const input = document.getElementById('msg-input');
-    const sendBtn = document.getElementById('send-btn');
-    const chatBox = document.getElementById('chatBox');
-    const saveBtn = document.getElementById('save-btn');
-    const loadBtn = document.getElementById('load-btn');
+    (function() {
+        // Обработка отправки сообщения
+        const sendForm = document.getElementById('send-form');
+        const msgInput = document.getElementById('msg-input');
+        const chatBox = document.getElementById('chatBox');
 
-    function appendMessage(text, role) {
-        const div = document.createElement('div');
-        div.className = `message ${role}`;
-        div.textContent = text;
-        chatBox.appendChild(div);
-        chatBox.scrollTop = chatBox.scrollHeight;
-    }
+        if (sendForm) {
+            sendForm.addEventListener('submit', async (e) => {
+                e.preventDefault(); // Отключаем обычную отправку
+                const text = msgInput.value.trim();
+                if (!text) return;
+                msgInput.value = '';
+                // Временно добавляем сообщение пользователя в чат
+                const userDiv = document.createElement('div');
+                userDiv.className = 'message user';
+                userDiv.textContent = text;
+                chatBox.appendChild(userDiv);
+                chatBox.scrollTop = chatBox.scrollHeight;
 
-    async function sendMessage() {
-        const text = input.value.trim();
-        if (!text) return;
-        input.value = '';
-        appendMessage(text, 'user');
-        try {
-            const formData = new FormData();
-            formData.append('user_message', text);
-            const response = await fetch('/send', { method: 'POST', body: formData });
-            const data = await response.json();
-            if (data.reply) {
-                appendMessage(data.reply, 'assistant');
-            } else {
-                appendMessage('Ошибка: ' + (data.error || 'неизвестно'), 'assistant');
-            }
-        } catch (e) {
-            appendMessage('Ошибка соединения', 'assistant');
+                try {
+                    const formData = new FormData(sendForm);
+                    const response = await fetch('/send', { method: 'POST', body: formData });
+                    const data = await response.json();
+                    if (data.reply) {
+                        const assistantDiv = document.createElement('div');
+                        assistantDiv.className = 'message assistant';
+                        assistantDiv.textContent = data.reply;
+                        chatBox.appendChild(assistantDiv);
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                    } else {
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'message assistant';
+                        errorDiv.textContent = 'Ошибка: ' + (data.error || 'неизвестно');
+                        chatBox.appendChild(errorDiv);
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                    }
+                } catch (err) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'message assistant';
+                    errorDiv.textContent = 'Ошибка соединения';
+                    chatBox.appendChild(errorDiv);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
+            });
         }
-    }
 
-    sendBtn.addEventListener('click', sendMessage);
-    input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
+        // Обработка сохранения (с запросом имени файла)
+        const saveForm = document.getElementById('save-form');
+        if (saveForm) {
+            saveForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const filename = prompt('Введите имя файла для сохранения (или оставьте пустым):');
+                const hiddenInput = saveForm.querySelector('input[name="filename"]');
+                if (hiddenInput) {
+                    hiddenInput.value = filename || '';
+                }
+                try {
+                    const formData = new FormData(saveForm);
+                    const response = await fetch('/save', { method: 'POST', body: formData });
+                    const data = await response.json();
+                    alert(data.message || data.error || 'Готово');
+                } catch (err) {
+                    alert('Ошибка при сохранении');
+                }
+            });
         }
-    });
 
-    // Сохранение (простой вариант)
-    saveBtn.addEventListener('click', async () => {
-        const filename = prompt('Введите имя файла для сохранения (или оставьте пустым):');
-        const formData = new FormData();
-        if (filename) formData.append('filename', filename);
-        const response = await fetch('/save', { method: 'POST', body: formData });
-        const data = await response.json();
-        alert(data.message || data.error);
-    });
-
-    // Загрузка
-    loadBtn.addEventListener('click', async () => {
-        const filename = prompt('Введите имя файла для загрузки:');
-        if (!filename) return;
-        const formData = new FormData();
-        formData.append('filename', filename);
-        const response = await fetch('/load', { method: 'POST', body: formData });
-        const data = await response.json();
-        if (data.message) {
-            alert(data.message);
-            location.reload();
-        } else {
-            alert(data.error);
+        // Обработка загрузки
+        const loadForm = document.getElementById('load-form');
+        if (loadForm) {
+            loadForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const filename = prompt('Введите имя файла для загрузки:');
+                if (!filename) return;
+                const hiddenInput = loadForm.querySelector('input[name="filename"]');
+                if (hiddenInput) {
+                    hiddenInput.value = filename;
+                }
+                try {
+                    const formData = new FormData(loadForm);
+                    const response = await fetch('/load', { method: 'POST', body: formData });
+                    const data = await response.json();
+                    if (data.message) {
+                        alert(data.message);
+                        location.reload(); // перезагружаем страницу для обновления истории
+                    } else {
+                        alert(data.error || 'Ошибка загрузки');
+                    }
+                } catch (err) {
+                    alert('Ошибка соединения');
+                }
+            });
         }
-    });
 
-    // Автоматическая фокусировка
-    input.focus();
+        // Автофокус на поле ввода
+        if (msgInput) {
+            msgInput.focus();
+        }
+    })();
 </script>
 {% endblock %}
