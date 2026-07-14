@@ -7,8 +7,8 @@ import uuid
 from dotenv import load_dotenv
 from flask_wtf import CSRFProtect
 load_dotenv()
-global debug
-debug=os.getenv('DEBUG', False)
+
+debug = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes')
 app = Flask(__name__)
 csrf=CSRFProtect(app)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
