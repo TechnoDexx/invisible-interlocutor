@@ -6,8 +6,10 @@ from core.users import Users
 import os
 import uuid
 from dotenv import load_dotenv
+
 from flask_wtf import CSRFProtect
 from flask_login import LoginManager, login_user, logout_user, current_user
+
 
 load_dotenv()
 
@@ -17,7 +19,12 @@ app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # ===== ИНИЦИАЛИЗАЦИЯ =====
+app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+
+# ===== ИНИЦИАЛИЗАЦИЯ =====
 csrf = CSRFProtect(app)
+users_db = Users()
+
 users_db = Users()
 
 login_manager = LoginManager()
@@ -25,9 +32,12 @@ login_manager.init_app(app)
 login_manager.login_view = "login"
 
 # ===== ЗАГРУЗЧИК ПОЛЬЗОВАТЕЛЯ =====
+
+
 @login_manager.user_loader
 def load_user(user_id):
-    return users_db.get_user(user_id)
+    return users_db.get_user_by_id(user_id)
+
 
 # ===== AI КЛИЕНТ =====
 ai_client = AIClient(
@@ -38,7 +48,9 @@ ai_client = AIClient(
 )
 
 # ===== ХРАНИЛИЩЕ СЕССИЙ (в памяти) =====
+# ===== ХРАНИЛИЩЕ СЕССИЙ (в памяти) =====
 sessions = {}
+
 
 def get_session(session_id):
     if session_id not in sessions:
@@ -46,6 +58,8 @@ def get_session(session_id):
     return sessions[session_id]
 
 # ===== ГЛАВНАЯ СТРАНИЦА =====
+
+
 @app.route('/')
 def index():
     username = current_user.username if current_user.is_authenticated else None
@@ -62,6 +76,8 @@ def index():
     return response
 
 # ===== РЕГИСТРАЦИЯ =====
+
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -77,6 +93,8 @@ def register():
     return render_template('register.html')
 
 # ===== ВХОД =====
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -94,18 +112,23 @@ def login():
     return render_template('login.html')
 
 # ===== ВЫХОД =====
+
+
 @app.route('/logout')
 def logout():
     logout_user()
     return redirect('/')
 
 # ===== ОТПРАВКА СООБЩЕНИЯ =====
+
+
 @app.route('/send', methods=['POST'])
 def send():
     if debug:
         print("=== REQUEST ===")
         print("METHOD:", request.method)
         print("HEADERS:", request.headers)
+
 
     session_id = request.cookies.get('session_id')
     if not session_id:
@@ -130,6 +153,8 @@ def send():
         return jsonify({'error': str(e)}), 500
 
 # ===== СОХРАНЕНИЕ ИСТОРИИ =====
+
+
 @app.route('/save', methods=['POST'])
 def save_history():
     session_id = request.cookies.get('session_id')
@@ -138,6 +163,7 @@ def save_history():
 
     session = get_session(session_id)
     if not session.history:
+        return jsonify({'error': 'История пуста'}), 400
         return jsonify({'error': 'История пуста'}), 400
 
     filename = request.form.get('filename', '').strip()
@@ -149,8 +175,11 @@ def save_history():
         return jsonify({'message': f'История сохранена в {filename}'})
     except Exception as e:
         return jsonify({'error': f'Ошибка: {str(e)}'}), 500
+        return jsonify({'error': f'Ошибка: {str(e)}'}), 500
 
 # ===== ЗАГРУЗКА ИСТОРИИ =====
+
+
 @app.route('/load', methods=['POST'])
 def load_history():
     session_id = request.cookies.get('session_id')
@@ -169,10 +198,15 @@ def load_history():
             session.history = old_history
             return jsonify({'error': 'Файл пуст'}), 400
         return jsonify({'message': f'История загружена из {filename} ({len(session.history)} сообщений)'})
+            session.history = old_history
+            return jsonify({'error': 'Файл пуст'}), 400
+        return jsonify({'message': f'История загружена из {filename} ({len(session.history)} сообщений)'})
     except FileNotFoundError:
         return jsonify({'error': f'Файл {filename} не найден'}), 404
     except Exception as e:
         return jsonify({'error': f'Ошибка: {str(e)}'}), 500
+        return jsonify({'error': f'Ошибка: {str(e)}'}), 500
+
 
 # ===== ЗАПУСК =====
 if __name__ == '__main__':
