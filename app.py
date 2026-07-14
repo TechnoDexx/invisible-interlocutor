@@ -7,10 +7,7 @@ import uuid
 from dotenv import load_dotenv
 from flask_wtf import CSRFProtect
 load_dotenv()
-<<<<<<< HEAD
-=======
 global debug
->>>>>>> 90ac156 (Add webface)
 debug=os.getenv('DEBUG', False)
 app = Flask(__name__)
 csrf=CSRFProtect(app)
