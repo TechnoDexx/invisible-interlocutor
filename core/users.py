@@ -5,15 +5,18 @@ import os
 from dotenv import load_dotenv
 from ydb import Driver
 from ydb.credentials import AccessTokenCredentials
-
+from flask_login import UserMixin
 load_dotenv()
 
-class Users:
+
+class Users(UserMixin):
     def __init__(self):
         """Инициализация: загружает параметры из .env и подключается к YDB."""
         self.token_file = os.getenv("YDB_TOKEN_FILE", "/home/itshark/my_token")
-        self.endpoint = os.getenv("YDB_ENDPOINT", "grpcs://ydb.serverless.yandexcloud.net:2135")
-        self.database = os.getenv("YDB_DATABASE", "/ru-central1/b1gddu24s17cjrnssgpj/etn4rgl61kgjokonk8pb")
+        self.endpoint = os.getenv(
+            "YDB_ENDPOINT", "grpcs://ydb.serverless.yandexcloud.net:2135")
+        self.database = os.getenv(
+            "YDB_DATABASE", "/ru-central1/b1gddu24s17cjrnssgpj/etn4rgl61kgjokonk8pb")
 
         with open(self.token_file, "r") as f:
             token = f.read().strip()
@@ -93,6 +96,9 @@ class Users:
         if user:
             return user["password_hash"] == self._hash_password(password)
         return False
+
+    def get_id(self):
+        return self.user_id
 
     def close(self):
         self.driver.stop()

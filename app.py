@@ -2,15 +2,22 @@
 from flask import Flask, render_template, request, jsonify, make_response, redirect
 from core.ai_client import AIClient
 from core.session import Session
+from core.users import Users
 import os
 import uuid
 from dotenv import load_dotenv
 from flask_wtf import CSRFProtect
+from flask_login import LoginManager, login_user, logout_user, current_user
 load_dotenv()
 
 debug = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes')
+
 app = Flask(__name__)
-csrf=CSRFProtect(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login"
+users_db = Users()
+csrf = CSRFProtect(app)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Инициализация AI-клиента
@@ -24,15 +31,22 @@ ai_client = AIClient(
 # Хранилище сессий (в памяти)
 sessions = {}
 
+
 def get_session(session_id):
     """Возвращает сессию по ID, создаёт новую при необходимости."""
     if session_id not in sessions:
         sessions[session_id] = Session()
     return sessions[session_id]
 
+
+@login_manager.user_loader
+def load_user(user_id):
+    return users_db.get_user(user_id)
+
+
 @app.route('/')
 def index():
-    """Главная страница чата."""
+    username = current_user.username if current_user.is_authenticated else None
     session_id = request.cookies.get('session_id')
     if not session_id:
         session_id = str(uuid.uuid4())
@@ -41,9 +55,29 @@ def index():
     session = get_session(session_id)
     history = session.history
 
-    response = make_response(render_template('index.html', history=history))
-    response.set_cookie('session_id', session_id, max_age=60*60*24*30)  # 30 дней
+    response = make_response(render_template('index.html', history=history, username=username))
+    response.set_cookie('session_id', session_id, max_age=60*60*24*30)
     return response
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        user = users_db.verify_user(username, password)  # проверяем пароль
+        if user:
+            login_user(user)  # <-- вместо set_cookie
+            return redirect('/')
+        else:
+            return "Неверный логин или пароль", 401
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    logout_user()  # <-- вместо set_cookie(expires=0)
+    return redirect('/')
+
 
 @app.route('/send', methods=['POST'])
 def send():
@@ -74,6 +108,7 @@ def send():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/save', methods=['POST'])
 def save_history():
     """Сохраняет историю текущей сессии в файл."""
@@ -95,6 +130,7 @@ def save_history():
         return jsonify({'message': f'История сохранена в {filename}'})
     except Exception as e:
         return jsonify({'error': f'Ошибка при сохранении: {str(e)}'}), 500
+
 
 @app.route('/load', methods=['POST'])
 def load_history():
@@ -124,6 +160,7 @@ def load_history():
         return jsonify({'error': f'Файл {filename} не найден'}), 404
     except Exception as e:
         return jsonify({'error': f'Ошибка при загрузке: {str(e)}'}), 500
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
