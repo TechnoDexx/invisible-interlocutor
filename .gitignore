@@ -253,4 +253,4 @@ basic templates with Bootsrap.zip
 .idea/vcs.xml
 core/session.zip
 last-history.json
-.tests
+tests/
