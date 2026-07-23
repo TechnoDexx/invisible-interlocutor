@@ -243,7 +243,6 @@ cython_debug/
 
 *.zip
 *.json
-*.md
 .gigaide
 .idea/.gigateam
 .idea/codeStyles
@@ -252,3 +251,4 @@ cython_debug/
 core/session.zip
 last-history.json
 tests/
+docs/*
