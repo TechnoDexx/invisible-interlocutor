@@ -1,7 +1,7 @@
 import sys
 import json
-
-
+import datetime
+from datetime import timezone
 class Session:
     def __init__(self, filename=None, history=None):
         self.history = history if history is not None else []
@@ -18,11 +18,11 @@ class Session:
         except UnicodeDecodeError:
             return raw.decode('utf-8', errors='replace').rstrip('\n')
 
-    def add_user_message(self, text):
-        self.history.append({"role": "user", "content": text})
+    def add_user_message(self, text,user_id=None):
+        self.history.append({"role": "user","timestamp": datetime.utcnow().isoformat(),"user_id": user_id, "content": text})
 
     def add_assistant_message(self, text):
-        self.history.append({"role": "assistant", "content": text})
+        self.history.append({"role": "assistant", "timestamp": datetime.utcnow().isoformat(), "content": text})
 
     def clear(self):
         self.history = []
