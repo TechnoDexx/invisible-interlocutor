@@ -1,5 +1,9 @@
 flask
+core
 uuid
 dotenv
 flask_wtf
+flask_login
 openai
+hashlib
+ydb
