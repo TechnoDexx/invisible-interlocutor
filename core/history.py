@@ -77,6 +77,23 @@ class MessageHistory:
         except Exception:
             pass
 
+    @staticmethod
+    def _parse_timestamp(ts):
+        """Преобразует timestamp из разных форматов в datetime."""
+        if ts is None:
+            return None
+        if isinstance(ts, datetime.datetime):
+            return ts
+        if isinstance(ts, int):
+            # Предполагаем, что это микросекунды с эпохи (Unix timestamp * 1_000_000)
+            return datetime.datetime.fromtimestamp(ts / 1_000_000)
+        if isinstance(ts, str):
+            try:
+                return datetime.datetime.fromisoformat(ts)
+            except ValueError:
+                return datetime.datetime.utcnow()
+        return datetime.datetime.utcnow()  # fallback
+
     def _get_next_message_id(self, user_id):
         session = self._get_session()
         query = """
@@ -86,7 +103,11 @@ class MessageHistory:
         prepared = session.prepare(query)
         tx = session.transaction()
         result = tx.execute(prepared, {"$user_id": user_id})
-        max_id = result[0].rows[0]['max_id'] if result[0].rows else 0
+        max_id = None
+        if result[0].rows:
+            max_id = result[0].rows[0]['max_id']
+        if max_id is None:
+            return 1
         return max_id + 1
 
     def save_message(self, user_id, session_id, role, content, timestamp=None):
@@ -97,6 +118,9 @@ class MessageHistory:
                 timestamp = datetime.datetime.fromisoformat(timestamp)
             except ValueError:
                 timestamp = datetime.datetime.utcnow()
+        # Если timestamp — int, преобразуем в datetime (хотя у нас такого не должно быть)
+        elif isinstance(timestamp, int):
+            timestamp = datetime.datetime.fromtimestamp(timestamp / 1_000_000)
 
         message_id = self._get_next_message_id(user_id)
 
@@ -153,6 +177,8 @@ class MessageHistory:
                     ts = datetime.datetime.fromisoformat(ts)
                 except ValueError:
                     ts = datetime.datetime.utcnow()
+            elif isinstance(ts, int):
+                ts = datetime.datetime.fromtimestamp(ts / 1_000_000)
 
             tx.execute(prepared, {
                 "$user_id": user_id,
@@ -246,10 +272,11 @@ class MessageHistory:
             prepared, {"$user_id": user_id, "$session_id": session_id})
         history = []
         for row in result[0].rows:
+            ts = self._parse_timestamp(row['timestamp'])
             history.append({
                 "role": row['role'],
                 "content": row['content'],
-                "timestamp": row['timestamp'].isoformat()
+                "timestamp": ts.isoformat() if ts else None
             })
         return history
 
@@ -268,7 +295,12 @@ class MessageHistory:
             prepared, {"$user_id": user_id, "$session_id": session_id})
         if result[0].rows:
             row = result[0].rows[0]
-            return {"role": row['role'], "content": row['content'], "timestamp": row['timestamp'].isoformat()}
+            ts = self._parse_timestamp(row['timestamp'])
+            return {
+                "role": row['role'],
+                "content": row['content'],
+                "timestamp": ts.isoformat() if ts else None
+            }
         return None
 
     def clear_history(self, user_id, session_id):

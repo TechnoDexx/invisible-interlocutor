@@ -25,9 +25,11 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
 
+
 @login_manager.user_loader
 def load_user(user_id):
     return users_db.get_user_by_id(user_id)
+
 
 ai_client = AIClient(
     api_key=os.getenv('API_KEY'),
@@ -38,10 +40,12 @@ ai_client = AIClient(
 
 sessions = {}
 
+
 def get_session(session_id):
     if session_id not in sessions:
         sessions[session_id] = Session()
     return sessions[session_id]
+
 
 def save_message_async(user_id, session_id, role, content, timestamp=None):
     try:
@@ -50,6 +54,8 @@ def save_message_async(user_id, session_id, role, content, timestamp=None):
         print(f"[ASYNC SAVE] Ошибка сохранения: {e}")
 
 # ---------- МАРШРУТЫ ----------
+
+
 @app.route('/')
 def index():
     username = current_user.username if current_user.is_authenticated else None
@@ -64,9 +70,11 @@ def index():
             session.history = full_history
             session.user_id = current_user.id
     history = session.history
-    response = make_response(render_template('index.html', history=history, username=username))
+    response = make_response(render_template(
+        'index.html', history=history, username=username))
     response.set_cookie('session_id', session_id, max_age=60*60*24*30)
     return response
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -81,6 +89,7 @@ def register():
         except Exception as e:
             return f'Ошибка: {e}', 400
     return render_template('register.html')
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -114,8 +123,10 @@ def login():
                         response_text = ai_client.ask(markers)
                         if session_id in sessions:
                             sess = sessions[session_id]
-                            sess.add_assistant_message(response_text, user_id=user.id)
-                            history_db.save_message(user.id, session_id, "assistant", response_text)
+                            sess.add_assistant_message(
+                                response_text, user_id=user.id)
+                            history_db.save_message(
+                                user.id, session_id, "assistant", response_text)
                 except Exception as e:
                     print(f"[CONTEXT RESTORE] Ошибка: {e}")
                 finally:
@@ -129,10 +140,12 @@ def login():
             return 'Неверный логин или пароль', 401
     return render_template('login.html')
 
+
 @app.route('/logout')
 def logout():
     logout_user()
     return redirect('/')
+
 
 @app.route('/status')
 def status():
@@ -140,6 +153,7 @@ def status():
     if not session_id or session_id not in sessions:
         return jsonify({'restoring': False})
     return jsonify({'restoring': sessions[session_id].restoring})
+
 
 @app.route('/send', methods=['POST'])
 def send():
@@ -174,6 +188,7 @@ def send():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/save', methods=['POST'])
 def save_history():
     session_id = request.cookies.get('session_id')
@@ -191,6 +206,7 @@ def save_history():
     except Exception as e:
         return jsonify({'error': f'Ошибка: {str(e)}'}), 500
 
+
 @app.route('/load', methods=['POST'])
 def load_history():
     session_id = request.cookies.get('session_id')
@@ -207,12 +223,14 @@ def load_history():
             session.history = old_history
             return jsonify({'error': 'Файл пуст'}), 400
         if session.user_id:
-            history_db.save_history(session.user_id, session_id, session.history)
+            history_db.save_history(
+                session.user_id, session_id, session.history)
         return jsonify({'message': f'История загружена из {filename} ({len(session.history)} сообщений)'})
     except FileNotFoundError:
         return jsonify({'error': f'Файл {filename} не найден'}), 404
     except Exception as e:
         return jsonify({'error': f'Ошибка: {str(e)}'}), 500
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
