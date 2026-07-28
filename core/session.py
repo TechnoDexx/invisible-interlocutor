@@ -2,6 +2,7 @@ import sys
 import json
 from datetime import datetime, timezone
 
+
 class Session:
     """
     Управляет историей диалога: добавление, сохранение, загрузка, вывод.
@@ -11,6 +12,7 @@ class Session:
     - обратную совместимость со старыми файлами (без timestamp и user_id)
     - метод get_context_markers() для «хитрого» восстановления контекста
     - _safe_input для работы в Docker/консоли
+    - автоматическую привязку user_id при загрузке, если он установлен в сессии
     """
 
     def __init__(self, filename=None, history=None, user_id=None):
@@ -46,20 +48,32 @@ class Session:
             "content": text
         })
 
-    def add_assistant_message(self, text):
+    def add_assistant_message(self, text, user_id=None):
         """
         Добавляет сообщение ассистента с timestamp.
         user_id для ассистента не нужен (или можно оставить None).
         """
+        if user_id is None:
+            user_id = self.user_id
         self.history.append({
             "role": "assistant",
             "timestamp": datetime.utcnow().isoformat(),
-            "user_id": None,
+            "user_id": user_id,
             "content": text
         })
 
     def set_user_id(self, user_id):
         """Устанавливает user_id для текущей сессии."""
+        self.user_id = user_id
+
+    def assign_user_to_history(self, user_id):
+        """
+        Проставляет user_id всем сообщениям, у которых он отсутствует или равен None.
+        Также обновляет self.user_id.
+        """
+        for msg in self.history:
+            if msg.get("user_id") is None:
+                msg["user_id"] = user_id
         self.user_id = user_id
 
     def clear(self):
@@ -87,7 +101,8 @@ class Session:
         """
         Загружает историю из JSON-файла.
         Если filename не указан, запрашивает через _safe_input.
-        Добавляет отсутствующие поля timestamp и user_id (None) для обратной совместимости.
+        Добавляет отсутствующие поля timestamp и user_id (None) для обратной совместимости,
+        а если в сессии уже есть user_id, проставляет его всем сообщениям без идентификатора.
         """
         if filename is None:
             filename = self._safe_input(
@@ -116,8 +131,9 @@ class Session:
         for msg in data:
             if "timestamp" not in msg:
                 msg["timestamp"] = None
-            if "user_id" not in msg:
-                msg["user_id"] = None
+            if "user_id" not in msg or msg["user_id"] is None:
+                # Если у сессии есть user_id, проставляем его
+                msg["user_id"] = self.user_id if self.user_id is not None else None
 
         if self.history:
             answer = self._safe_input(

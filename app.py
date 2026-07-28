@@ -110,8 +110,10 @@ def send():
         session.add_assistant_message(response_text)
         return jsonify({'reply': response_text})
     except Exception as e:
+        import traceback
+        traceback.print_exc()  # выведет стек в консоль сервера
         return jsonify({'error': str(e)}), 500
-
+    
 @app.route('/save', methods=['POST'])
 def save_history():
     session_id = request.cookies.get('session_id')
