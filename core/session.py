@@ -13,12 +13,14 @@ class Session:
     - метод get_context_markers() для «хитрого» восстановления контекста
     - _safe_input для работы в Docker/консоли
     - автоматическую привязку user_id при загрузке, если он установлен в сессии
+    - флаг restoring для индикации процесса восстановления контекста
     """
 
     def __init__(self, filename=None, history=None, user_id=None):
         self.history = history if history is not None else []
         self.filename = filename
         self.user_id = user_id  # храним на уровне сессии
+        self.restoring = False   # флаг восстановления контекста
 
     @staticmethod
     def _safe_input(prompt=""):
@@ -35,10 +37,6 @@ class Session:
             return raw.decode('utf-8', errors='replace').rstrip('\n')
 
     def add_user_message(self, text, user_id=None):
-        """
-        Добавляет сообщение пользователя с timestamp и user_id.
-        Если user_id не передан, используется self.user_id (если он установлен).
-        """
         if user_id is None:
             user_id = self.user_id
         self.history.append({
@@ -49,10 +47,6 @@ class Session:
         })
 
     def add_assistant_message(self, text, user_id=None):
-        """
-        Добавляет сообщение ассистента с timestamp.
-        user_id для ассистента не нужен (или можно оставить None).
-        """
         if user_id is None:
             user_id = self.user_id
         self.history.append({
@@ -63,14 +57,12 @@ class Session:
         })
 
     def set_user_id(self, user_id):
-        """Устанавливает user_id для текущей сессии."""
         self.user_id = user_id
 
+    def set_restoring(self, value):
+        self.restoring = bool(value)
+
     def assign_user_to_history(self, user_id):
-        """
-        Проставляет user_id всем сообщениям, у которых он отсутствует или равен None.
-        Также обновляет self.user_id.
-        """
         for msg in self.history:
             if msg.get("user_id") is None:
                 msg["user_id"] = user_id
@@ -80,10 +72,6 @@ class Session:
         self.history = []
 
     def save(self, filename=None):
-        """
-        Сохраняет историю в JSON-файл.
-        Если filename не указан, запрашивает через _safe_input.
-        """
         if not self.history:
             print("История пуста, сохранять нечего.")
             return
@@ -98,12 +86,6 @@ class Session:
         print(f"История сохранена в {filename}")
 
     def load(self, filename=None):
-        """
-        Загружает историю из JSON-файла.
-        Если filename не указан, запрашивает через _safe_input.
-        Добавляет отсутствующие поля timestamp и user_id (None) для обратной совместимости,
-        а если в сессии уже есть user_id, проставляет его всем сообщениям без идентификатора.
-        """
         if filename is None:
             filename = self._safe_input(
                 "Введите имя файла для загрузки: ").strip()
@@ -132,13 +114,11 @@ class Session:
             if "timestamp" not in msg:
                 msg["timestamp"] = None
             if "user_id" not in msg or msg["user_id"] is None:
-                # Если у сессии есть user_id, проставляем его
                 msg["user_id"] = self.user_id if self.user_id is not None else None
 
         if self.history:
             answer = self._safe_input(
-                "Текущая история не пуста. Заменить её загруженной? (y/n): "
-            ).strip().lower()
+                "Текущая история не пуста. Заменить её загруженной? (y/n): ").strip().lower()
             if answer not in ("y", "да", "yes"):
                 print("Загрузка отменена.")
                 return
@@ -147,17 +127,14 @@ class Session:
             f"Загружено {len(self.history)} сообщений из файла '{filename}'.")
 
     def print(self):
-        """Выводит историю диалога в консоль (для отладки)."""
         if not self.history:
             print("История пуста.")
             return
         print("\n=== ИСТОРИЯ ДИАЛОГА ===")
         for i, msg in enumerate(self.history, 1):
             role = "Вы" if msg["role"] == "user" else "Собеседник"
-            # Можно добавить отображение времени, если есть
             timestamp = msg.get("timestamp", "")
             if timestamp:
-                # Показываем только время в кратком формате
                 try:
                     dt = datetime.fromisoformat(timestamp)
                     time_str = dt.strftime("%H:%M:%S")
@@ -169,13 +146,6 @@ class Session:
         print("=== КОНЕЦ ИСТОРИИ ===\n")
 
     def get_context_markers(self):
-        """
-        Возвращает три ключевых сообщения для восстановления контекста:
-        - первое
-        - среднее (по индексу)
-        - последнее
-        Если сообщений <= 3, возвращает все.
-        """
         if not self.history:
             return []
         if len(self.history) <= 3:
@@ -190,4 +160,4 @@ class Session:
         return len(self.history)
 
     def __repr__(self):
-        return f"<Session history={len(self.history)} user_id={self.user_id}>"
+        return f"<Session history={len(self.history)} user_id={self.user_id} restoring={self.restoring}>"

@@ -19,6 +19,12 @@
   {% endfor %}
 </div>
 
+<!-- Спиннер восстановления контекста -->
+<div id="restoring-spinner" style="display: none; text-align: center; padding: 12px; color: #6c757d; background: #f8f9fa; border-radius: 8px; margin-top: 8px;">
+    <span>⏳ Восстанавливаю контекст прошлого разговора...</span>
+    <span class="dots">.</span>
+</div>
+
 <!-- Форма отправки сообщения -->
 <form id="send-form" action="/send" method="post" class="row g-2 mt-3">
   <div class="col-10">
@@ -172,6 +178,46 @@
     if (msgInput) {
       msgInput.focus();
     }
+  })();
+
+  // ---- Периодический опрос статуса восстановления контекста ----
+  (function() {
+      const spinner = document.getElementById('restoring-spinner');
+
+      function checkRestoring() {
+          fetch('/status')
+              .then(res => res.json())
+              .then(data => {
+                  if (data.restoring) {
+                      spinner.style.display = 'block';
+                      if (!window._restoringInterval) {
+                          window._restoringInterval = setInterval(() => {
+                              const dots = spinner.querySelector('.dots');
+                              if (dots) {
+                                  const count = dots.textContent.length;
+                                  dots.textContent = '.'.repeat((count % 3) + 1);
+                              }
+                          }, 500);
+                      }
+                  } else {
+                      spinner.style.display = 'none';
+                      if (window._restoringInterval) {
+                          clearInterval(window._restoringInterval);
+                          window._restoringInterval = null;
+                      }
+                  }
+                  if (data.restoring) {
+                      setTimeout(checkRestoring, 2000);
+                  }
+              })
+              .catch(() => {
+                  setTimeout(checkRestoring, 3000);
+              });
+      }
+
+      if (spinner) {
+          checkRestoring();
+      }
   })();
 </script>
 {% endblock %}

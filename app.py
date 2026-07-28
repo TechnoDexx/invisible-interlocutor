@@ -19,7 +19,7 @@ app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 csrf = CSRFProtect(app)
 users_db = Users()
-history_db = MessageHistory()   # <--- НОВОЕ
+history_db = MessageHistory()
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -43,9 +43,7 @@ def get_session(session_id):
         sessions[session_id] = Session()
     return sessions[session_id]
 
-# ---------- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ АСИНХРОННОГО СОХРАНЕНИЯ ----------
 def save_message_async(user_id, session_id, role, content, timestamp=None):
-    """Сохраняет сообщение в YDB в фоновом потоке."""
     try:
         history_db.save_message(user_id, session_id, role, content, timestamp)
     except Exception as e:
@@ -60,7 +58,6 @@ def index():
         session_id = str(uuid.uuid4())
         sessions[session_id] = Session()
     session = get_session(session_id)
-    # Если пользователь авторизован, но история в памяти пуста — загружаем из БД
     if current_user.is_authenticated and not session.history:
         full_history = history_db.get_full_history(current_user.id, session_id)
         if full_history:
@@ -96,33 +93,34 @@ def login():
         if user and users_db.verify_user(username, password):
             login_user(user)
 
-            # ---- ПЕРЕНЕСЕНИЕ АНОНИМНОЙ ИСТОРИИ В YDB ----
             session_id = request.cookies.get('session_id')
-            if session_id and session_id in sessions:
-                session = sessions[session_id]
-                if session.history and session.user_id is None:
-                    # Сохраняем анонимную историю в БД
-                    history_db.save_history(user.id, session_id, session.history)
-                    # Очищаем память, чтобы не дублировать
-                    session.clear()
-                # Устанавливаем user_id сессии
-                session.user_id = user.id
+            if not session_id:
+                session_id = str(uuid.uuid4())
+            session = get_session(session_id)
 
-            # ---- ВОССТАНОВЛЕНИЕ КОНТЕКСТА (АСИНХРОННО) ----
+            # Перенос анонимной истории в YDB
+            if session.history and session.user_id is None:
+                history_db.save_history(user.id, session_id, session.history)
+                session.clear()
+            session.user_id = user.id
+
+            # Восстановление контекста (асинхронно)
+            session.set_restoring(True)
+
             def restore_context():
-                # Загружаем маркеры из БД
-                markers = history_db.get_markers(user.id, session_id)
-                if markers:
-                    try:
+                try:
+                    markers = history_db.get_markers(user.id, session_id)
+                    if markers:
                         response_text = ai_client.ask(markers)
-                        # Добавляем ответ в сессию (если она ещё существует)
                         if session_id in sessions:
                             sess = sessions[session_id]
                             sess.add_assistant_message(response_text, user_id=user.id)
-                            # Сохраняем ответ в БД
                             history_db.save_message(user.id, session_id, "assistant", response_text)
-                    except Exception as e:
-                        print(f"[CONTEXT RESTORE] Ошибка: {e}")
+                except Exception as e:
+                    print(f"[CONTEXT RESTORE] Ошибка: {e}")
+                finally:
+                    if session_id in sessions:
+                        sessions[session_id].set_restoring(False)
 
             threading.Thread(target=restore_context, daemon=True).start()
 
@@ -136,6 +134,13 @@ def logout():
     logout_user()
     return redirect('/')
 
+@app.route('/status')
+def status():
+    session_id = request.cookies.get('session_id')
+    if not session_id or session_id not in sessions:
+        return jsonify({'restoring': False})
+    return jsonify({'restoring': sessions[session_id].restoring})
+
 @app.route('/send', methods=['POST'])
 def send():
     session_id = request.cookies.get('session_id')
@@ -146,10 +151,7 @@ def send():
     if not user_message:
         return jsonify({'error': 'Сообщение пустое'}), 400
 
-    # Добавляем сообщение пользователя в память
     session.add_user_message(user_message)
-
-    # Асинхронно сохраняем в БД (если пользователь авторизован)
     if session.user_id:
         threading.Thread(
             target=save_message_async,
@@ -158,18 +160,14 @@ def send():
         ).start()
 
     try:
-        # Отправляем полную историю в AI
         response_text = ai_client.ask(session.history)
         session.add_assistant_message(response_text)
-
-        # Асинхронно сохраняем ответ ассистента
         if session.user_id:
             threading.Thread(
                 target=save_message_async,
                 args=(session.user_id, session_id, "assistant", response_text),
                 daemon=True
             ).start()
-
         return jsonify({'reply': response_text})
     except Exception as e:
         import traceback
@@ -178,7 +176,6 @@ def send():
 
 @app.route('/save', methods=['POST'])
 def save_history():
-    # можно оставить для локального сохранения в файл (для отладки)
     session_id = request.cookies.get('session_id')
     if not session_id:
         return jsonify({'error': 'Сессия не найдена'}), 400
@@ -209,7 +206,6 @@ def load_history():
         if not session.history:
             session.history = old_history
             return jsonify({'error': 'Файл пуст'}), 400
-        # Если загрузили историю и есть user_id — сохраняем в YDB
         if session.user_id:
             history_db.save_history(session.user_id, session_id, session.history)
         return jsonify({'message': f'История загружена из {filename} ({len(session.history)} сообщений)'})

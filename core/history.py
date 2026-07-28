@@ -11,16 +11,14 @@ class MessageHistory:
     Работа с историей сообщений в YDB.
     Таблица: messages (
         user_id Text,
-        message_id Uint64,        -- автоинкремент в рамках пользователя
+        message_id Uint64,
         session_id Text,
         role Text,
         content Text,
         timestamp Timestamp,
         PRIMARY KEY (user_id, message_id)
     )
-    Индексы:
-        - (user_id, session_id)   для быстрого поиска сессий
-        - (user_id, timestamp)    для сортировки по времени
+    Индексы: (user_id, session_id), (user_id, timestamp)
     """
 
     def __init__(self):
@@ -52,7 +50,6 @@ class MessageHistory:
 
     def _ensure_table_exists(self):
         session = self._get_session()
-        # Таблица
         try:
             session.execute_scheme("""
                 CREATE TABLE messages (
@@ -67,7 +64,6 @@ class MessageHistory:
             """)
         except Exception:
             pass
-        # Индексы
         try:
             session.execute_scheme("""
                 CREATE INDEX idx_messages_user_session ON messages (user_id, session_id)
@@ -82,7 +78,6 @@ class MessageHistory:
             pass
 
     def _get_next_message_id(self, user_id):
-        """Возвращает следующий message_id для пользователя (MAX + 1)."""
         session = self._get_session()
         query = """
             DECLARE $user_id AS Text;
@@ -95,7 +90,6 @@ class MessageHistory:
         return max_id + 1
 
     def save_message(self, user_id, session_id, role, content, timestamp=None):
-        """Сохраняет одно сообщение, автоматически назначая message_id."""
         if timestamp is None:
             timestamp = datetime.datetime.utcnow()
         elif isinstance(timestamp, str):
@@ -130,13 +124,10 @@ class MessageHistory:
         tx.commit()
 
     def save_history(self, user_id, session_id, history):
-        """Сохраняет несколько сообщений одной транзакцией."""
         if not history:
             return
 
-        # Получаем начальный message_id
         message_id = self._get_next_message_id(user_id)
-
         session = self._get_session()
         query = """
             DECLARE $user_id AS Text;
@@ -175,7 +166,6 @@ class MessageHistory:
         tx.commit()
 
     def get_markers(self, user_id, session_id):
-        """Возвращает первое, среднее (по времени) и последнее сообщение."""
         session = self._get_session()
         tx = session.transaction()
 
@@ -230,7 +220,6 @@ class MessageHistory:
                 p4, {"$user_id": user_id, "$session_id": session_id, "$offset": offset})
             middle = r4[0].rows[0] if r4[0].rows else None
 
-        # Собираем, исключая дубли
         markers = []
         if first:
             markers.append(
@@ -243,7 +232,6 @@ class MessageHistory:
         return markers
 
     def get_full_history(self, user_id, session_id):
-        """Возвращает полную историю (отсортированную по времени)."""
         session = self._get_session()
         query = """
             DECLARE $user_id AS Text;
@@ -266,7 +254,6 @@ class MessageHistory:
         return history
 
     def get_last_message(self, user_id, session_id):
-        """Возвращает последнее сообщение или None."""
         session = self._get_session()
         query = """
             DECLARE $user_id AS Text;
@@ -285,7 +272,6 @@ class MessageHistory:
         return None
 
     def clear_history(self, user_id, session_id):
-        """Удаляет все сообщения сессии."""
         session = self._get_session()
         query = """
             DECLARE $user_id AS Text;
