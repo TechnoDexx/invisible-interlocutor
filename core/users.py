@@ -9,7 +9,7 @@ from ydb import Driver
 from ydb.credentials import AccessTokenCredentials
 from flask_login import UserMixin
 
-load_dotenv()  # загружаем переменные из .env
+load_dotenv()
 
 debug = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes')
 
@@ -34,11 +34,14 @@ class User(UserMixin):
 class Users:
     def __init__(self):
         self.token_file = os.getenv("YDB_TOKEN_FILE", "/home/itshark/my_token")
-        self.endpoint = os.getenv("YDB_ENDPOINT", "grpcs://ydb.serverless.yandexcloud.net:2135")
-        self.database = os.getenv("YDB_DATABASE", "/ru-central1/b1gddu24s17cjrnssgpj/etn4rgl61kgjokonk8pb")
+        self.endpoint = os.getenv(
+            "YDB_ENDPOINT", "grpcs://ydb.serverless.yandexcloud.net:2135")
+        self.database = os.getenv(
+            "YDB_DATABASE", "/ru-central1/b1gddu24s17cjrnssgpj/etn4rgl61kgjokonk8pb")
 
         if debug:
-            print(f"🔧 Users init: endpoint={self.endpoint}, database={self.database}")
+            print(
+                f"🔧 Users init: endpoint={self.endpoint}, database={self.database}")
 
         with open(self.token_file, "r") as f:
             token = f.read().strip()
@@ -61,7 +64,8 @@ class Users:
                 return session
             except Exception as e:
                 if debug:
-                    print(f"⚠️ Попытка {attempt+1} создания сессии не удалась: {e}")
+                    print(
+                        f"⚠️ Попытка {attempt+1} создания сессии не удалась: {e}")
                 if attempt == 2:
                     raise
                 time.sleep(0.5)
@@ -85,12 +89,21 @@ class Users:
             if debug:
                 print("ℹ️ Таблица уже существует (или ошибка):", e)
         try:
-            session.execute_scheme("CREATE INDEX username_idx ON users (username);")
+            session.execute_scheme(
+                "CREATE INDEX username_idx ON users (username);")
             if debug:
                 print("✅ Индекс на username создан")
         except Exception as e:
             if debug:
                 print("ℹ️ Индекс уже существует (или ошибка):", e)
+        # Добавляем колонку email, если её нет
+        try:
+            session.execute_scheme("ALTER TABLE users ADD COLUMN email Text")
+            if debug:
+                print("✅ Колонка email добавлена в таблицу users")
+        except Exception as e:
+            if debug:
+                print("ℹ️ Колонка email уже существует или ошибка:", e)
 
     def _hash_password(self, password):
         return hashlib.sha256(password.encode()).hexdigest()
@@ -107,14 +120,16 @@ class Users:
         rows = result[0].rows
         exists = len(rows) > 0
         if debug:
-            print(f"🔍 Проверка существования пользователя {username}: {'найден' if exists else 'не найден'}")
+            print(
+                f"🔍 Проверка существования пользователя {username}: {'найден' if exists else 'не найден'}")
         return exists
 
     def create_user(self, username, password, email=None):
         session_check = self._get_session()
         if self._user_exists(session_check, username):
             if debug:
-                print(f"❌ Попытка создать существующего пользователя {username}")
+                print(
+                    f"❌ Попытка создать существующего пользователя {username}")
             raise Exception("Пользователь с таким именем уже существует")
 
         user_id = str(uuid.uuid4())
@@ -124,9 +139,10 @@ class Users:
             DECLARE $username AS Text;
             DECLARE $password_hash AS Text;
             DECLARE $created_at AS Timestamp;
+            DECLARE $email AS Text;
 
-            UPSERT INTO users (user_id, username, password_hash, created_at)
-            VALUES ($user_id, $username, $password_hash, $created_at);
+            UPSERT INTO users (user_id, username, password_hash, created_at, email)
+            VALUES ($user_id, $username, $password_hash, $created_at, $email);
         """
         prepared = session_insert.prepare(query)
         tx = session_insert.transaction()
@@ -136,7 +152,8 @@ class Users:
                 "$user_id": user_id,
                 "$username": username,
                 "$password_hash": self._hash_password(password),
-                "$created_at": datetime.datetime.now()
+                "$created_at": datetime.datetime.now(),
+                "$email": email
             }
         )
         tx.commit()
@@ -150,7 +167,7 @@ class Users:
         session = self._get_session()
         query = """
             DECLARE $username AS Text;
-            SELECT user_id, username, password_hash, created_at
+            SELECT user_id, username, password_hash, created_at, email
             FROM users
             WHERE username = $username;
         """
@@ -166,7 +183,8 @@ class Users:
                 user_id=row['user_id'],
                 username=row['username'],
                 password_hash=row['password_hash'],
-                created_at=row['created_at']
+                created_at=row['created_at'],
+                email=row.get('email')  # может быть None
             )
         if debug:
             print(f"❌ Пользователь {username} не найден")
@@ -178,7 +196,7 @@ class Users:
         session = self._get_session()
         query = """
             DECLARE $user_id AS Text;
-            SELECT user_id, username, password_hash, created_at
+            SELECT user_id, username, password_hash, created_at, email
             FROM users
             WHERE user_id = $user_id;
         """
@@ -189,12 +207,14 @@ class Users:
         if rows:
             row = rows[0]
             if debug:
-                print(f"✅ Пользователь с ID {user_id} найден: {row['username']}")
+                print(
+                    f"✅ Пользователь с ID {user_id} найден: {row['username']}")
             return User(
                 user_id=row['user_id'],
                 username=row['username'],
                 password_hash=row['password_hash'],
-                created_at=row['created_at']
+                created_at=row['created_at'],
+                email=row.get('email')
             )
         if debug:
             print(f"❌ Пользователь с ID {user_id} не найден")
@@ -205,7 +225,8 @@ class Users:
         if user:
             valid = user.password_hash == self._hash_password(password)
             if debug:
-                print(f"🔐 Проверка пароля для {username}: {'успешно' if valid else 'неверный пароль'}")
+                print(
+                    f"🔐 Проверка пароля для {username}: {'успешно' if valid else 'неверный пароль'}")
             return valid
         return False
 

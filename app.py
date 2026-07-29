@@ -1,4 +1,6 @@
 # app.py
+import re
+
 from flask import Flask, render_template, request, jsonify, make_response, redirect
 from core.ai_client import AIClient
 from core.session import Session
@@ -81,10 +83,14 @@ def register():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
+        email = request.form.get('email', '').strip()
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            return 'Некорректный email', 400
         if not username or not password:
             return 'Имя пользователя и пароль обязательны', 400
         try:
-            users_db.create_user(username, password)
+            # <--- передаём email
+            users_db.create_user(username, password, email=email)
             return redirect('/login')
         except Exception as e:
             return f'Ошибка: {e}', 400
