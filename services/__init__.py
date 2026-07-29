@@ -1,2 +1,3 @@
-# Импорты из файлов внутри папки
-__all_ = []
+# __init__.py
+from .mail import MailService
+__all_ = ['MailService']
