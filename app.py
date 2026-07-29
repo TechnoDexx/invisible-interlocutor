@@ -1,7 +1,7 @@
 # app.py
 import re
 
-from flask import Flask, render_template, request, jsonify, make_response, redirect
+from flask import Flask, render_template, request, jsonify, make_response, redirect, flash
 from core.ai_client import AIClient
 from core.session import Session
 from core.users import Users
@@ -11,7 +11,7 @@ import uuid
 import threading
 from dotenv import load_dotenv
 from flask_wtf import CSRFProtect
-from flask_login import LoginManager, login_user, logout_user, current_user
+from flask_login import LoginManager, login_user, logout_user, current_user, login_required
 
 load_dotenv()
 debug = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes')
@@ -85,15 +85,18 @@ def register():
         password = request.form.get('password', '').strip()
         email = request.form.get('email', '').strip()
         if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-            return 'Некорректный email', 400
+            flash('Некорректный email', 'danger')
+            return render_template('register.html'), 400
         if not username or not password:
-            return 'Имя пользователя и пароль обязательны', 400
+            flash('Имя пользователя и пароль обязательны', 'danger')
+            return render_template('register.html'), 400
         try:
-            # <--- передаём email
             users_db.create_user(username, password, email=email)
+            flash('Регистрация успешна! Войдите в систему.', 'success')
             return redirect('/login')
         except Exception as e:
-            return f'Ошибка: {e}', 400
+            flash(f'Ошибка: {e}', 'danger')
+            return render_template('register.html'), 400
     return render_template('register.html')
 
 
@@ -103,7 +106,8 @@ def login():
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
         if not username or not password:
-            return 'Имя пользователя и пароль обязательны', 400
+            flash('Имя пользователя и пароль обязательны', 'danger')
+            return render_template('login.html'), 400
         user = users_db.get_user(username)
         if user and users_db.verify_user(username, password):
             login_user(user)
@@ -143,7 +147,8 @@ def login():
 
             return redirect('/')
         else:
-            return 'Неверный логин или пароль', 401
+            flash('Неверный логин или пароль', 'danger')
+            return render_template('login.html'), 401
     return render_template('login.html')
 
 
@@ -151,6 +156,30 @@ def login():
 def logout():
     logout_user()
     return redirect('/')
+
+
+@app.route('/profile')
+@login_required
+def profile():
+    return render_template('profile.html', user=current_user)
+
+
+@app.route('/profile/update', methods=['POST'])
+@login_required
+def update_profile():
+    email = request.form.get('email', '').strip()
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+        flash('Некорректный email', 'danger')
+        return redirect('/profile')
+    try:
+        users_db.update_user_email(current_user.id, email)
+        # Обновляем объект current_user, чтобы изменения отобразились сразу
+        current_user.email = email
+        flash('Email успешно обновлён!', 'success')
+        return redirect('/profile')
+    except Exception as e:
+        flash(f'Ошибка: {e}', 'danger')
+        return redirect('/profile')
 
 
 @app.route('/status')

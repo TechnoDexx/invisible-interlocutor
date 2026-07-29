@@ -4,7 +4,9 @@
   <h1 class="h3">Незримый собеседник</h1>
   <div>
     {% if username %}
-    <span class="me-3">Привет, {{ username }}!</span>
+    <span class="me-3"
+      >Привет, <a href="{{ url_for('profile') }}">{{ username }}</a>!</span
+    >
     <a href="/logout" class="btn btn-outline-danger btn-sm">Выйти</a>
     {% else %}
     <a href="/login" class="btn btn-outline-primary btn-sm me-2">Войти</a>

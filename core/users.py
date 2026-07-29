@@ -184,7 +184,7 @@ class Users:
                 username=row['username'],
                 password_hash=row['password_hash'],
                 created_at=row['created_at'],
-                email=row.get('email')  # может быть None
+                email=row.get('email')
             )
         if debug:
             print(f"❌ Пользователь {username} не найден")
@@ -229,6 +229,20 @@ class Users:
                     f"🔐 Проверка пароля для {username}: {'успешно' if valid else 'неверный пароль'}")
             return valid
         return False
+
+    def update_user_email(self, user_id, email):
+        session = self._get_session()
+        query = """
+            DECLARE $user_id AS Text;
+            DECLARE $email AS Text;
+            UPDATE users SET email = $email WHERE user_id = $user_id;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        tx.execute(prepared, {"$user_id": user_id, "$email": email})
+        tx.commit()
+        if debug:
+            print(f"✅ Email обновлён для пользователя {user_id}")
 
     def close(self):
         self.driver.stop()
