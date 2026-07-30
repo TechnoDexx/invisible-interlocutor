@@ -134,13 +134,14 @@ def login():
 
             session.user_id = user.id
 
-            # Загружаем всю историю пользователя (все сессии) — чтобы не потерять старые диалоги
+            # ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА ИСТОРИИ (исправление)
             full_history = history_db.get_full_history(user.id, None)
             if debug:
-                print(
-                    f"[DEBUG /login] Загружено {len(full_history)} сообщений для user {user.id}")
+                print(f"[DEBUG /login] Загружено {len(full_history)} сообщений для user {user.id}")
             if full_history:
                 session.history = full_history
+            else:
+                session.history = []  # очищаем, если истории нет
 
             # Восстановление контекста (асинхронно)
             session.set_restoring(True)
