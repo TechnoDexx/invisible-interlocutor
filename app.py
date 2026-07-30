@@ -19,6 +19,9 @@ debug = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes')
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
+# --- Конфигурация для почтового сервиса (из APP_BASE_URL) ---
+app.config['BASE_URL'] = os.getenv('APP_BASE_URL', 'http://localhost:8080')
+
 csrf = CSRFProtect(app)
 users_db = Users()
 history_db = MessageHistory()
@@ -36,7 +39,7 @@ def load_user(user_id):
 
 ai_client = AIClient(
     api_key=os.getenv('API_KEY'),
-    base_url=os.getenv('BASE_URL'),
+    base_url=os.getenv('AI_BASE_URL'),   # переименовано
     project=os.getenv('PROJECT'),
     prompt_id=os.getenv('PROMPT_ID')
 )
