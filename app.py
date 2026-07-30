@@ -174,8 +174,14 @@ def login():
 
 @app.route('/logout')
 def logout():
+    session_id = request.cookies.get('session_id')
+    if session_id and session_id in sessions:
+        sessions[session_id].clear()
+        sessions[session_id].user_id = None
     logout_user()
-    return redirect('/')
+    response = make_response(redirect('/'))
+    response.set_cookie('session_id', '', expires=0)
+    return response
 
 
 @app.route('/profile')
