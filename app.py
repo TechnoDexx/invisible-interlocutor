@@ -1,11 +1,11 @@
 # app.py
 import re
-
 from flask import Flask, render_template, request, jsonify, make_response, redirect, flash
 from core.ai_client import AIClient
 from core.session import Session
 from core.users import Users
 from core.history import MessageHistory
+from services import MailService
 import os
 import uuid
 import threading
@@ -22,6 +22,7 @@ app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 csrf = CSRFProtect(app)
 users_db = Users()
 history_db = MessageHistory()
+mail_service = MailService(app, users_db)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -173,13 +174,91 @@ def update_profile():
         return redirect('/profile')
     try:
         users_db.update_user_email(current_user.id, email)
-        # Обновляем объект current_user, чтобы изменения отобразились сразу
         current_user.email = email
         flash('Email успешно обновлён!', 'success')
         return redirect('/profile')
     except Exception as e:
         flash(f'Ошибка: {e}', 'danger')
         return redirect('/profile')
+
+
+@app.route('/request-verification', methods=['GET', 'POST'])
+@login_required
+def request_verification():
+    if current_user.email_verified:
+        flash('Ваш email уже подтверждён.', 'info')
+        return redirect('/profile')
+
+    if request.method == 'POST':
+        if mail_service.send_verification_email(current_user):
+            flash('Письмо с подтверждением отправлено на ваш email.', 'success')
+        else:
+            flash('Не удалось отправить письмо. Попробуйте позже.', 'danger')
+        return redirect('/profile')
+
+    return render_template('request_verification.html')
+
+
+@app.route('/verify-email/<token>')
+def verify_email(token):
+    success, message = users_db.verify_email_by_token(token)
+    if success:
+        flash('Ваш email успешно подтверждён!', 'success')
+        return redirect('/profile')
+    else:
+        flash(message, 'danger')
+        return redirect('/login')
+
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip()
+        if not email:
+            flash('Введите email', 'danger')
+            return render_template('forgot_password.html'), 400
+
+        user = users_db.get_user_by_email(email)
+        if user:
+            mail_service.send_reset_password_email(user)
+            flash(
+                'Если пользователь с таким email существует, ссылка для сброса пароля отправлена.', 'info')
+        else:
+            flash(
+                'Если пользователь с таким email существует, ссылка для сброса пароля отправлена.', 'info')
+        return redirect('/login')
+
+    return render_template('forgot_password.html')
+
+
+@app.route('/reset-password/<token>', methods=['GET'])
+def reset_password_form(token):
+    user = users_db.get_user_by_reset_token(token)
+    if not user:
+        flash('Ссылка недействительна или истекла.', 'danger')
+        return redirect('/login')
+    return render_template('reset_password.html', token=token)
+
+
+@app.route('/reset-password', methods=['POST'])
+def reset_password():
+    token = request.form.get('token', '').strip()
+    new_password = request.form.get('new_password', '').strip()
+    if not token or not new_password:
+        flash('Необходимо указать новый пароль.', 'danger')
+        return render_template('reset_password.html', token=token), 400
+
+    if len(new_password) < 6:
+        flash('Пароль должен содержать минимум 6 символов.', 'danger')
+        return render_template('reset_password.html', token=token), 400
+
+    success, message = users_db.reset_password_by_token(token, new_password)
+    if success:
+        flash('Пароль успешно изменён! Войдите с новым паролем.', 'success')
+        return redirect('/login')
+    else:
+        flash(message, 'danger')
+        return redirect('/login')
 
 
 @app.route('/status')
