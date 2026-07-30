@@ -1,11 +1,7 @@
-flask
-uuid
-threading
-dotenv
-flask_wtf
-flask_login
+Flask
+python-dotenv
+Flask-WTF
+Flask-Login
 openai
 ydb
-hashlib
-secrets
-flask_mail
+Flask-Mail
