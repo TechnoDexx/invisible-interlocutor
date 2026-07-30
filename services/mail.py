@@ -1,40 +1,38 @@
 # services/mail.py
 import os
 import secrets
+import datetime
 from threading import Thread
-from flask import current_app, render_template
-from flask_mail import Message
-from datetime import datetime, timedelta
-import re
+from flask import current_app
+from flask_mail import Message, Mail
+
 
 class MailService:
-    """Сервис для работы с электронной почтой: подтверждение email, восстановление пароля."""
-
-    def __init__(self, app=None):
+    def __init__(self, app=None, users_db=None):
         self.app = app
+        self.users_db = users_db
+        self.mail = None
         if app is not None:
             self.init_app(app)
 
     def init_app(self, app):
-        """Инициализация с приложением Flask."""
         self.app = app
-        # Настройки SMTP
-        app.config.setdefault('MAIL_SERVER', os.getenv('MAIL_SERVER', 'smtp.yandex.ru'))
+        app.config.setdefault('MAIL_SERVER', os.getenv(
+            'MAIL_SERVER', 'smtp.yandex.ru'))
         app.config.setdefault('MAIL_PORT', int(os.getenv('MAIL_PORT', 587)))
-        app.config.setdefault('MAIL_USE_TLS', os.getenv('MAIL_USE_TLS', 'true').lower() in ('true', '1', 'yes'))
-        app.config.setdefault('MAIL_USE_SSL', os.getenv('MAIL_USE_SSL', 'false').lower() in ('true', '1', 'yes'))
+        app.config.setdefault('MAIL_USE_TLS', os.getenv(
+            'MAIL_USE_TLS', 'true').lower() in ('true', '1', 'yes'))
+        app.config.setdefault('MAIL_USE_SSL', os.getenv(
+            'MAIL_USE_SSL', 'false').lower() in ('true', '1', 'yes'))
         app.config.setdefault('MAIL_USERNAME', os.getenv('MAIL_USERNAME'))
         app.config.setdefault('MAIL_PASSWORD', os.getenv('MAIL_PASSWORD'))
-        app.config.setdefault('MAIL_DEFAULT_SENDER', os.getenv('MAIL_DEFAULT_SENDER'))
+        app.config.setdefault('MAIL_DEFAULT_SENDER',
+                              os.getenv('MAIL_DEFAULT_SENDER'))
         app.config.setdefault('MAIL_VERIFICATION_TOKEN_EXPIRE_HOURS', 24)
         app.config.setdefault('MAIL_RESET_TOKEN_EXPIRE_HOURS', 1)
-
-        # Инициализация Flask-Mail
-        from flask_mail import Mail
         self.mail = Mail(app)
 
     def _send_async_email(self, msg):
-        """Асинхронная отправка письма."""
         with self.app.app_context():
             try:
                 self.mail.send(msg)
@@ -42,77 +40,75 @@ class MailService:
                 current_app.logger.error(f"Ошибка отправки письма: {e}")
 
     def send_email(self, subject, recipients, body=None, html=None):
-        """
-        Отправляет письмо асинхронно.
-        subject — тема письма.
-        recipients — список получателей.
-        body — текст письма (plain text).
-        html — HTML-версия письма.
-        """
         if not recipients:
             return
         msg = Message(subject, recipients=recipients, body=body, html=html)
         Thread(target=self._send_async_email, args=(msg,)).start()
 
-    def generate_verification_token(self, user_id):
-        """Генерирует токен для подтверждения email (сохраняется в users.py)."""
+    def generate_verification_token(self):
         return secrets.token_urlsafe(32)
 
-    def generate_reset_token(self, user_id):
-        """Генерирует токен для сброса пароля."""
+    def generate_reset_token(self):
         return secrets.token_urlsafe(32)
 
     def send_verification_email(self, user):
-        """
-        Отправляет письмо с подтверждением email.
-        user — объект User (должен содержать email, id, username).
-        """
         if not user.email:
-            current_app.logger.warning(f"Попытка отправить подтверждение без email: user_id={user.id}")
+            current_app.logger.warning(
+                f"Нет email для подтверждения: user_id={user.id}")
+            return False
+        if not self.users_db:
+            current_app.logger.error("users_db не передан в MailService")
             return False
 
-        token = self.generate_verification_token(user.id)
-        # Здесь нужно сохранить токен в users.py (добавим позже)
-        # Пока просто формируем ссылку
-        verify_url = f"{self.app.config.get('BASE_URL', 'http://localhost:8080')}/verify-email/{token}"
+        token = self.generate_verification_token()
+        self.users_db.set_verification_token(user.id, token)
+
+        base_url = self.app.config.get('BASE_URL', 'http://localhost:8080')
+        verify_url = f"{base_url}/verify-email/{token}"
+        expire_hours = self.app.config['MAIL_VERIFICATION_TOKEN_EXPIRE_HOURS']
+
         html = f"""
         <p>Здравствуйте, {user.username}!</p>
-        <p>Для подтверждения вашего email перейдите по ссылке:</p>
+        <p>Для подтверждения email перейдите по ссылке:</p>
         <a href="{verify_url}">{verify_url}</a>
-        <p>Ссылка действительна в течение {self.app.config['MAIL_VERIFICATION_TOKEN_EXPIRE_HOURS']} часов.</p>
+        <p>Ссылка действительна {expire_hours} ч.</p>
         <p>С уважением,<br>Незримый собеседник</p>
         """
         self.send_email(
             subject='Подтверждение email',
             recipients=[user.email],
-            body=f"Для подтверждения email перейдите по ссылке: {verify_url}",
+            body=f"Ссылка: {verify_url}",
             html=html
         )
         return True
 
     def send_reset_password_email(self, user):
-        """
-        Отправляет письмо для сброса пароля.
-        user — объект User.
-        """
         if not user.email:
-            current_app.logger.warning(f"Попытка сброса пароля без email: user_id={user.id}")
+            current_app.logger.warning(
+                f"Нет email для сброса: user_id={user.id}")
+            return False
+        if not self.users_db:
+            current_app.logger.error("users_db не передан в MailService")
             return False
 
-        token = self.generate_reset_token(user.id)
-        reset_url = f"{self.app.config.get('BASE_URL', 'http://localhost:8080')}/reset-password/{token}"
+        token = self.generate_reset_token()
+        self.users_db.set_reset_token(user.email, token)
+
+        base_url = self.app.config.get('BASE_URL', 'http://localhost:8080')
+        reset_url = f"{base_url}/reset-password/{token}"
+        expire_hours = self.app.config['MAIL_RESET_TOKEN_EXPIRE_HOURS']
+
         html = f"""
         <p>Здравствуйте, {user.username}!</p>
         <p>Для сброса пароля перейдите по ссылке:</p>
         <a href="{reset_url}">{reset_url}</a>
-        <p>Ссылка действительна в течение {self.app.config['MAIL_RESET_TOKEN_EXPIRE_HOURS']} часа.</p>
-        <p>Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо.</p>
+        <p>Ссылка действительна {expire_hours} ч.</p>
         <p>С уважением,<br>Незримый собеседник</p>
         """
         self.send_email(
             subject='Сброс пароля',
             recipients=[user.email],
-            body=f"Для сброса пароля перейдите по ссылке: {reset_url}",
+            body=f"Ссылка: {reset_url}",
             html=html
         )
         return True

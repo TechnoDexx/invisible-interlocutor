@@ -79,20 +79,18 @@ class MessageHistory:
 
     @staticmethod
     def _parse_timestamp(ts):
-        """Преобразует timestamp из разных форматов в datetime."""
         if ts is None:
             return None
         if isinstance(ts, datetime.datetime):
             return ts
         if isinstance(ts, int):
-            # Предполагаем, что это микросекунды с эпохи (Unix timestamp * 1_000_000)
             return datetime.datetime.fromtimestamp(ts / 1_000_000)
         if isinstance(ts, str):
             try:
                 return datetime.datetime.fromisoformat(ts)
             except ValueError:
                 return datetime.datetime.utcnow()
-        return datetime.datetime.utcnow()  # fallback
+        return datetime.datetime.utcnow()
 
     def _get_next_message_id(self, user_id):
         session = self._get_session()
@@ -118,7 +116,6 @@ class MessageHistory:
                 timestamp = datetime.datetime.fromisoformat(timestamp)
             except ValueError:
                 timestamp = datetime.datetime.utcnow()
-        # Если timestamp — int, преобразуем в datetime (хотя у нас такого не должно быть)
         elif isinstance(timestamp, int):
             timestamp = datetime.datetime.fromtimestamp(timestamp / 1_000_000)
 
@@ -195,7 +192,6 @@ class MessageHistory:
         session = self._get_session()
         tx = session.transaction()
 
-        # Первое
         q1 = """
             DECLARE $user_id AS Text;
             DECLARE $session_id AS Text;
@@ -207,7 +203,6 @@ class MessageHistory:
         r1 = tx.execute(p1, {"$user_id": user_id, "$session_id": session_id})
         first = r1[0].rows[0] if r1[0].rows else None
 
-        # Последнее
         q2 = """
             DECLARE $user_id AS Text;
             DECLARE $session_id AS Text;
@@ -219,7 +214,6 @@ class MessageHistory:
         r2 = tx.execute(p2, {"$user_id": user_id, "$session_id": session_id})
         last = r2[0].rows[0] if r2[0].rows else None
 
-        # Количество и среднее
         q3 = """
             DECLARE $user_id AS Text;
             DECLARE $session_id AS Text;
@@ -257,19 +251,35 @@ class MessageHistory:
             markers.append({"role": last['role'], "content": last['content']})
         return markers
 
-    def get_full_history(self, user_id, session_id):
-        session = self._get_session()
-        query = """
-            DECLARE $user_id AS Text;
-            DECLARE $session_id AS Text;
-            SELECT role, content, timestamp FROM messages
-            WHERE user_id = $user_id AND session_id = $session_id
-            ORDER BY timestamp ASC;
+    def get_full_history(self, user_id, session_id=None):
         """
-        prepared = session.prepare(query)
+        Возвращает полную историю сообщений.
+        Если session_id=None — возвращает все сообщения пользователя.
+        Если session_id указан — только для этой сессии.
+        """
+        session = self._get_session()
         tx = session.transaction()
-        result = tx.execute(
-            prepared, {"$user_id": user_id, "$session_id": session_id})
+
+        if session_id is None:
+            query = """
+                DECLARE $user_id AS Text;
+                SELECT role, content, timestamp FROM messages
+                WHERE user_id = $user_id
+                ORDER BY timestamp ASC;
+            """
+            prepared = session.prepare(query)
+            result = tx.execute(prepared, {"$user_id": user_id})
+        else:
+            query = """
+                DECLARE $user_id AS Text;
+                DECLARE $session_id AS Text;
+                SELECT role, content, timestamp FROM messages
+                WHERE user_id = $user_id AND session_id = $session_id
+                ORDER BY timestamp ASC;
+            """
+            prepared = session.prepare(query)
+            result = tx.execute(prepared, {"$user_id": user_id, "$session_id": session_id})
+
         history = []
         for row in result[0].rows:
             ts = self._parse_timestamp(row['timestamp'])

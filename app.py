@@ -39,7 +39,7 @@ def load_user(user_id):
 
 ai_client = AIClient(
     api_key=os.getenv('API_KEY'),
-    base_url=os.getenv('AI_BASE_URL'),   # переименовано
+    base_url=os.getenv('AI_BASE_URL'),
     project=os.getenv('PROJECT'),
     prompt_id=os.getenv('PROMPT_ID')
 )
@@ -70,11 +70,17 @@ def index():
         session_id = str(uuid.uuid4())
         sessions[session_id] = Session()
     session = get_session(session_id)
+
+    # Загружаем всю историю пользователя (все сессии), если она ещё не загружена
     if current_user.is_authenticated and not session.history:
-        full_history = history_db.get_full_history(current_user.id, session_id)
+        full_history = history_db.get_full_history(current_user.id, None)
+        if debug:
+            print(
+                f"[DEBUG /] Загружено {len(full_history)} сообщений для user {current_user.id}")
         if full_history:
             session.history = full_history
             session.user_id = current_user.id
+
     history = session.history
     response = make_response(render_template(
         'index.html', history=history, username=username))
@@ -125,7 +131,16 @@ def login():
             if session.history and session.user_id is None:
                 history_db.save_history(user.id, session_id, session.history)
                 session.clear()
+
             session.user_id = user.id
+
+            # Загружаем всю историю пользователя (все сессии) — чтобы не потерять старые диалоги
+            full_history = history_db.get_full_history(user.id, None)
+            if debug:
+                print(
+                    f"[DEBUG /login] Загружено {len(full_history)} сообщений для user {user.id}")
+            if full_history:
+                session.history = full_history
 
             # Восстановление контекста (асинхронно)
             session.set_restoring(True)

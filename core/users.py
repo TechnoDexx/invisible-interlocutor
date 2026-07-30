@@ -73,7 +73,6 @@ class Users:
 
     def _ensure_table_exists(self):
         session = self._get_session()
-        # Создание таблицы, если её нет
         try:
             session.execute_scheme("""
                 CREATE TABLE users (
@@ -90,7 +89,6 @@ class Users:
             if debug:
                 print("ℹ️ Таблица уже существует (или ошибка):", e)
 
-        # Индекс по username
         try:
             session.execute_scheme(
                 "CREATE INDEX username_idx ON users (username);")
@@ -100,7 +98,6 @@ class Users:
             if debug:
                 print("ℹ️ Индекс уже существует (или ошибка):", e)
 
-        # Добавляем колонки, если их нет
         for col_name, col_type in [
             ("email", "Text"),
             ("email_verified", "Bool"),
@@ -222,7 +219,6 @@ class Users:
         return None
 
     def get_user_by_email(self, email):
-        """Возвращает пользователя по email."""
         session = self._get_session()
         query = """
             DECLARE $email AS Text;
@@ -273,10 +269,24 @@ class Users:
         if debug:
             print(f"✅ Email обновлён для пользователя {user_id}")
 
+    # ---------- ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ ПРЕОБРАЗОВАНИЯ TIMESTAMP ----------
+    def _to_datetime(self, value):
+        """Преобразует значение в datetime, если это int (Unix timestamp)."""
+        if value is None:
+            return None
+        if isinstance(value, datetime.datetime):
+            return value
+        if isinstance(value, int):
+            # Если значение > 1e12, это микросекунды
+            if value > 1_000_000_000_000:
+                return datetime.datetime.fromtimestamp(value / 1_000_000)
+            else:
+                return datetime.datetime.fromtimestamp(value)
+        return value
+
     # ---------- МЕТОДЫ ДЛЯ ПОДТВЕРЖДЕНИЯ EMAIL И ВОССТАНОВЛЕНИЯ ПАРОЛЯ ----------
 
     def set_verification_token(self, user_id, token, expires_hours=24):
-        """Сохраняет токен подтверждения email и время его истечения."""
         expires_at = datetime.datetime.now() + datetime.timedelta(hours=expires_hours)
         session = self._get_session()
         query = """
@@ -295,9 +305,7 @@ class Users:
             print(f"✅ Токен подтверждения сохранён для пользователя {user_id}")
 
     def verify_email_by_token(self, token):
-        """Проверяет токен подтверждения и, если он действителен, подтверждает email."""
         session = self._get_session()
-        # Находим пользователя по токену
         query_find = """
             DECLARE $token AS Text;
             SELECT user_id, email, verification_token_expires FROM users
@@ -313,15 +321,13 @@ class Users:
 
         row = result[0].rows[0]
         user_id = row['user_id']
-        expires_at = row.get('verification_token_expires')
+        expires_at = self._to_datetime(row.get('verification_token_expires'))
 
-        # Проверяем срок действия
-        if expires_at and expires_at < datetime.datetime.now():
+        if expires_at is not None and expires_at < datetime.datetime.now():
             if debug:
                 print("❌ Токен подтверждения истёк")
             return False, "Срок действия токена истёк"
 
-        # Подтверждаем email
         query_update = """
             DECLARE $user_id AS Text;
             UPDATE users SET email_verified = True, verification_token = NULL, verification_token_expires = NULL
@@ -337,7 +343,6 @@ class Users:
         return True, "Email успешно подтверждён"
 
     def set_reset_token(self, email, token, expires_hours=1):
-        """Сохраняет токен сброса пароля для пользователя по email."""
         user = self.get_user_by_email(email)
         if not user:
             if debug:
@@ -363,9 +368,7 @@ class Users:
         return True, "Токен сброса отправлен на email"
 
     def reset_password_by_token(self, token, new_password):
-        """Проверяет токен сброса и, если он действителен, меняет пароль."""
         session = self._get_session()
-        # Находим пользователя по токену
         query_find = """
             DECLARE $token AS Text;
             SELECT user_id, reset_token_expires FROM users
@@ -381,15 +384,13 @@ class Users:
 
         row = result[0].rows[0]
         user_id = row['user_id']
-        expires_at = row.get('reset_token_expires')
+        expires_at = self._to_datetime(row.get('reset_token_expires'))
 
-        # Проверяем срок действия
-        if expires_at and expires_at < datetime.datetime.now():
+        if expires_at is not None and expires_at < datetime.datetime.now():
             if debug:
                 print("❌ Токен сброса истёк")
             return False, "Срок действия токена истёк"
 
-        # Обновляем пароль
         new_hash = self._hash_password(new_password)
         query_update = """
             DECLARE $user_id AS Text;
@@ -408,16 +409,19 @@ class Users:
         return True, "Пароль успешно изменён"
 
     def get_user_by_reset_token(self, token):
-        """Возвращает пользователя по токену сброса пароля, если токен действителен."""
         session = self._get_session()
         query = """
             DECLARE $token AS Text;
+            DECLARE $now AS Timestamp;
             SELECT user_id, username, email FROM users
-            WHERE reset_token = $token AND reset_token_expires > CURRENT_TIMESTAMP();
+            WHERE reset_token = $token AND reset_token_expires > $now;
         """
         prepared = session.prepare(query)
         tx = session.transaction()
-        result = tx.execute(prepared, {"$token": token})
+        result = tx.execute(prepared, {
+            "$token": token,
+            "$now": datetime.datetime.now()
+        })
         if result[0].rows:
             row = result[0].rows[0]
             return self.get_user_by_id(row['user_id'])
