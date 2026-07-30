@@ -37,6 +37,27 @@ content %}
             </div>
           </div>
 
+          <!-- Блок статуса подтверждения email -->
+          <div class="mb-3">
+            {% if user.email_verified %}
+            <div class="text-success">
+              <span>✅ Email подтверждён</span>
+            </div>
+            {% else %}
+            <div class="text-warning">
+              <span>⚠️ Email не подтверждён</span>
+            </div>
+            <div class="mt-2">
+              <a
+                href="{{ url_for('request_verification') }}"
+                class="btn btn-outline-primary btn-sm"
+              >
+                Запросить подтверждение
+              </a>
+            </div>
+            {% endif %}
+          </div>
+
           <button type="submit" class="btn btn-primary w-100">
             Обновить email
           </button>
