@@ -1,26 +1,23 @@
-FROM python:3.12-slim
+# Используем официальный образ Python
+FROM python:3.13-slim
 
-# Устанавливаем локаль и переменные для корректной работы с UTF-8
-ENV LANG=C.UTF-8 \
-    LC_ALL=C.UTF-8 \
-    PYTHONIOENCODING=utf-8
-
-# Устанавливаем рабочую директорию
+# Устанавливаем рабочую директорию внутри контейнера
 WORKDIR /app
 
-# Копируем requirements.txt отдельно для кэширования зависимостей
+# Устанавливаем переменные окружения для Python
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Копируем файл с зависимостями и устанавливаем их
 COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Устанавливаем зависимости
-RUN python -m pip install --no-cache-dir -r requirements.txt
-
-# Копируем весь код проекта
+# Копируем весь проект в контейнер
 COPY . .
 
-# Опционально: метаданные образа
-LABEL Name=invisibleinterlocutor \
-      Version=0.0.1 \
-      Description="Незримый собеседник — консольный ИИ-агент для поддержки"
+# Открываем порт, который использует приложение (по умолчанию 8080)
+EXPOSE 8080
 
-# Точка входа — запуск main.py
-ENTRYPOINT ["python", "main.py"]
+# Команда для запуска приложения
+CMD ["python", "app.py"]
