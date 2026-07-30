@@ -1,9 +1,11 @@
 flask
-core
 uuid
+threading
 dotenv
 flask_wtf
 flask_login
 openai
-hashlib
 ydb
+hashlib
+secrets
+flask_mail
