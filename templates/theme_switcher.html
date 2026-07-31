@@ -1,0 +1,95 @@
+<div class="dropdown d-inline-block">
+    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="themeDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+        🎨 <span id="current-theme-name">Тема</span>
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end" id="themeList" aria-labelledby="themeDropdown">
+        <!-- Заполняется скриптом -->
+    </ul>
+</div>
+
+<script>
+    (function() {
+        // Список всех тем с читаемыми названиями
+        const themes = {
+            'litera': 'Litera',
+            'flatly': 'Flatly',
+            'cosmo': 'Cosmo',
+            'sandstone': 'Sandstone',
+            'morph': 'Morph',
+            'yeti': 'Yeti',
+            'spacelab': 'Spacelab',
+            'cerulean': 'Cerulean',
+            'cyborg': 'Cyborg',
+            'darkly': 'Darkly',
+            'journal': 'Journal',
+            'lumen': 'Lumen',
+            'materia': 'Materia',
+            'pulse': 'Pulse',
+            'simplex': 'Simplex',
+            'slate': 'Slate',
+            'solar': 'Solar',
+            'superhero': 'Superhero',
+            'united': 'United',
+            'vapor': 'Vapor',
+            'zephyr': 'Zephyr'
+        };
+
+        const themeLink = document.getElementById('theme-css');
+        const themeList = document.getElementById('themeList');
+        const currentThemeName = document.getElementById('current-theme-name');
+
+        // Заполняем меню
+        if (themeList) {
+            themeList.innerHTML = '';
+            Object.entries(themes).forEach(([key, label]) => {
+                const li = document.createElement('li');
+                const a = document.createElement('a');
+                a.className = 'dropdown-item';
+                a.href = '#';
+                a.dataset.theme = key;
+                a.textContent = label;
+                li.appendChild(a);
+                themeList.appendChild(li);
+            });
+        }
+
+        // Функция смены темы
+        function setTheme(themeName) {
+            if (themeLink) {
+                themeLink.href = `https://bootswatch.com/5/${themeName}/bootstrap.min.css`;
+                localStorage.setItem('selectedTheme', themeName);
+            }
+            // Обновляем название на кнопке
+            if (currentThemeName) {
+                const label = themes[themeName] || themeName.charAt(0).toUpperCase() + themeName.slice(1);
+                currentThemeName.textContent = label;
+            }
+        }
+
+        // Обработчики кликов по пунктам меню (делегирование)
+        if (themeList) {
+            themeList.addEventListener('click', function(e) {
+                const target = e.target.closest('.dropdown-item');
+                if (!target) return;
+                e.preventDefault();
+
+                const theme = target.dataset.theme;
+                if (theme) {
+                    setTheme(theme);
+                    // Закрываем дропдаун
+                    const dropdown = bootstrap.Dropdown.getInstance(document.getElementById('themeDropdown'));
+                    if (dropdown) dropdown.hide();
+                }
+            });
+        }
+
+        // Восстанавливаем сохранённую тему при загрузке
+        const savedTheme = localStorage.getItem('selectedTheme');
+        if (savedTheme && themes[savedTheme]) {
+            setTheme(savedTheme);
+        } else {
+            // Тема по умолчанию — Cosmo (можно заменить на любую другую)
+            setTheme('cosmo');
+        }
+    })();
+</script>
