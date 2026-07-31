@@ -15,7 +15,7 @@ from flask_login import LoginManager, login_user, logout_user, current_user, log
 
 load_dotenv()
 debug = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes')
-
+app_debug=os.getenv('APP_DEBUG','').lower() in ('true','1','yes')
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
@@ -373,4 +373,4 @@ def load_history():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    app.run(debug=app_debug, host='0.0.0.0', port=port)
