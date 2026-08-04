@@ -1,2 +1,0 @@
-class AIMemory():
-    pass
