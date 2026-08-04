@@ -98,6 +98,7 @@ class Users:
             if debug:
                 print("ℹ️ Индекс уже существует (или ошибка):", e)
 
+        # Добавляем все необходимые колонки
         for col_name, col_type in [
             ("email", "Text"),
             ("email_verified", "Bool"),
@@ -105,6 +106,10 @@ class Users:
             ("verification_token_expires", "Timestamp"),
             ("reset_token", "Text"),
             ("reset_token_expires", "Timestamp"),
+            # Новые колонки для смены email через токен
+            ("pending_email", "Text"),
+            ("email_change_token", "Text"),
+            ("email_change_token_expires", "Timestamp"),
         ]:
             try:
                 session.execute_scheme(
@@ -256,6 +261,7 @@ class Users:
         return False
 
     def update_user_email(self, user_id, email):
+        # Этот метод оставлен для обратной совместимости, но теперь рекомендуется использовать set_pending_email + confirm_email_change
         session = self._get_session()
         query = """
             DECLARE $user_id AS Text;
@@ -269,22 +275,17 @@ class Users:
         if debug:
             print(f"✅ Email обновлён для пользователя {user_id}")
 
-    # ---------- ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ ПРЕОБРАЗОВАНИЯ TIMESTAMP ----------
     def _to_datetime(self, value):
-        """Преобразует значение в datetime, если это int (Unix timestamp)."""
         if value is None:
             return None
         if isinstance(value, datetime.datetime):
             return value
         if isinstance(value, int):
-            # Если значение > 1e12, это микросекунды
             if value > 1_000_000_000_000:
                 return datetime.datetime.fromtimestamp(value / 1_000_000)
             else:
                 return datetime.datetime.fromtimestamp(value)
         return value
-
-    # ---------- МЕТОДЫ ДЛЯ ПОДТВЕРЖДЕНИЯ EMAIL И ВОССТАНОВЛЕНИЯ ПАРОЛЯ ----------
 
     def set_verification_token(self, user_id, token, expires_hours=24):
         expires_at = datetime.datetime.now() + datetime.timedelta(hours=expires_hours)
@@ -426,6 +427,112 @@ class Users:
             row = result[0].rows[0]
             return self.get_user_by_id(row['user_id'])
         return None
+
+    # ========== НОВЫЕ МЕТОДЫ ДЛЯ ПРОФИЛЯ ==========
+
+    def change_password(self, user_id: str, old_password: str, new_password: str) -> bool:
+        user = self.get_user_by_id(user_id)
+        if not user:
+            return False
+        if user.password_hash != self._hash_password(old_password):
+            return False
+        new_hash = self._hash_password(new_password)
+        session = self._get_session()
+        query = """
+            DECLARE $user_id AS Text;
+            DECLARE $new_hash AS Text;
+            UPDATE users SET password_hash = $new_hash WHERE user_id = $user_id;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        tx.execute(prepared, {"$user_id": user_id, "$new_hash": new_hash})
+        tx.commit()
+        return True
+
+    def update_username(self, user_id: str, new_username: str) -> bool:
+        existing = self.get_user(new_username)
+        if existing and existing.user_id != user_id:
+            return False
+        session = self._get_session()
+        query = """
+            DECLARE $user_id AS Text;
+            DECLARE $new_username AS Text;
+            UPDATE users SET username = $new_username WHERE user_id = $user_id;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        tx.execute(prepared, {"$user_id": user_id,
+                   "$new_username": new_username})
+        tx.commit()
+        return True
+
+    # ========== НОВЫЙ МЕТОД ДЛЯ СМЕНЫ EMAIL ЧЕРЕЗ ТОКЕН ==========
+
+    def set_pending_email(self, user_id: str, new_email: str, token: str, expires_hours=24):
+        expires_at = datetime.datetime.now() + datetime.timedelta(hours=expires_hours)
+        session = self._get_session()
+        query = """
+            DECLARE $user_id AS Text;
+            DECLARE $new_email AS Text;
+            DECLARE $token AS Text;
+            DECLARE $expires_at AS Timestamp;
+            UPDATE users SET 
+                pending_email = $new_email,
+                email_change_token = $token,
+                email_change_token_expires = $expires_at
+            WHERE user_id = $user_id;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        tx.execute(prepared, {
+            "$user_id": user_id,
+            "$new_email": new_email,
+            "$token": token,
+            "$expires_at": expires_at
+        })
+        tx.commit()
+        if debug:
+            print(f"✅ Временный email сохранён для пользователя {user_id}")
+
+    def confirm_email_change(self, token: str) -> bool:
+        session = self._get_session()
+        query_find = """
+            DECLARE $token AS Text;
+            DECLARE $now AS Timestamp;
+            SELECT user_id, pending_email FROM users
+            WHERE email_change_token = $token AND email_change_token_expires > $now;
+        """
+        prepared_find = session.prepare(query_find)
+        tx = session.transaction()
+        result = tx.execute(prepared_find, {
+            "$token": token,
+            "$now": datetime.datetime.now()
+        })
+        if not result[0].rows:
+            return False
+        row = result[0].rows[0]
+        user_id = row['user_id']
+        new_email = row['pending_email']
+
+        query_update = """
+            DECLARE $user_id AS Text;
+            DECLARE $new_email AS Text;
+            UPDATE users SET 
+                email = $new_email,
+                email_verified = True,
+                pending_email = NULL,
+                email_change_token = NULL,
+                email_change_token_expires = NULL
+            WHERE user_id = $user_id;
+        """
+        prepared_update = session.prepare(query_update)
+        tx_update = session.transaction()
+        tx_update.execute(prepared_update, {
+                          "$user_id": user_id, "$new_email": new_email})
+        tx_update.commit()
+        return True
+
+    # =====================================================
 
     def close(self):
         self.driver.stop()

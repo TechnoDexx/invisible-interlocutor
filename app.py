@@ -1,5 +1,6 @@
 # app.py
 import re
+import secrets
 from flask import Flask, render_template, request, jsonify, make_response, redirect, flash
 from core.ai_client import AIClient
 from core.session import Session
@@ -15,7 +16,7 @@ from flask_login import LoginManager, login_user, logout_user, current_user, log
 
 load_dotenv()
 debug = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes')
-app_debug=os.getenv('APP_DEBUG','').lower() in ('true','1','yes')
+app_debug = os.getenv('APP_DEBUG', '').lower() in ('true', '1', 'yes')
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
@@ -58,6 +59,7 @@ def save_message_async(user_id, session_id, role, content, timestamp=None):
         history_db.save_message(user_id, session_id, role, content, timestamp)
     except Exception as e:
         print(f"[ASYNC SAVE] Ошибка сохранения: {e}")
+
 
 # ---------- МАРШРУТЫ ----------
 
@@ -134,14 +136,15 @@ def login():
 
             session.user_id = user.id
 
-            # ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА ИСТОРИИ (исправление)
+            # Принудительная загрузка истории
             full_history = history_db.get_full_history(user.id, None)
             if debug:
-                print(f"[DEBUG /login] Загружено {len(full_history)} сообщений для user {user.id}")
+                print(
+                    f"[DEBUG /login] Загружено {len(full_history)} сообщений для user {user.id}")
             if full_history:
                 session.history = full_history
             else:
-                session.history = []  # очищаем, если истории нет
+                session.history = []
 
             # Восстановление контекста (асинхронно)
             session.set_restoring(True)
@@ -190,21 +193,73 @@ def profile():
     return render_template('profile.html', user=current_user)
 
 
+# ========== ИЗМЕНЁННЫЙ МАРШРУТ ОБНОВЛЕНИЯ EMAIL (через токен) ==========
 @app.route('/profile/update', methods=['POST'])
 @login_required
 def update_profile():
-    email = request.form.get('email', '').strip()
-    if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+    new_email = request.form.get('email', '').strip()
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", new_email):
         flash('Некорректный email', 'danger')
         return redirect('/profile')
-    try:
-        users_db.update_user_email(current_user.id, email)
-        current_user.email = email
-        flash('Email успешно обновлён!', 'success')
+
+    # Генерируем токен для подтверждения смены email
+    token = secrets.token_urlsafe(32)
+    users_db.set_pending_email(current_user.id, new_email, token)
+
+    # Отправляем письмо на новый email
+    if mail_service.send_email_change_confirmation(current_user, new_email, token):
+        flash(
+            f'Письмо для подтверждения отправлено на {new_email}. Перейдите по ссылке для завершения смены.', 'success')
+    else:
+        flash('Не удалось отправить письмо. Попробуйте позже.', 'danger')
+
+    return redirect('/profile')
+
+
+# ========== НОВЫЙ МАРШРУТ ПОДТВЕРЖДЕНИЯ СМЕНЫ EMAIL ==========
+@app.route('/confirm-email-change/<token>')
+def confirm_email_change(token):
+    if users_db.confirm_email_change(token):
+        flash('Email успешно изменён!', 'success')
+    else:
+        flash('Ссылка недействительна или истекла.', 'danger')
+    return redirect('/profile')
+
+
+# ========== НОВЫЕ МАРШРУТЫ ДЛЯ СМЕНЫ ПАРОЛЯ И ИМЕНИ ==========
+@app.route('/profile/change-password', methods=['POST'])
+@login_required
+def change_password():
+    old = request.form.get('old_password', '').strip()
+    new = request.form.get('new_password', '').strip()
+    if not old or not new:
+        flash('Заполните оба поля', 'danger')
         return redirect('/profile')
-    except Exception as e:
-        flash(f'Ошибка: {e}', 'danger')
+    if len(new) < 6:
+        flash('Новый пароль должен быть не короче 6 символов', 'danger')
         return redirect('/profile')
+    if users_db.change_password(current_user.id, old, new):
+        flash('Пароль успешно изменён', 'success')
+    else:
+        flash('Неверный старый пароль', 'danger')
+    return redirect('/profile')
+
+
+@app.route('/profile/change-username', methods=['POST'])
+@login_required
+def change_username():
+    new_username = request.form.get('new_username', '').strip()
+    if not new_username:
+        flash('Имя не может быть пустым', 'danger')
+        return redirect('/profile')
+    if users_db.update_username(current_user.id, new_username):
+        flash('Имя пользователя обновлено', 'success')
+        return redirect('/profile')
+    else:
+        flash('Это имя уже занято', 'danger')
+        return redirect('/profile')
+
+# ==============================================
 
 
 @app.route('/request-verification', methods=['GET', 'POST'])

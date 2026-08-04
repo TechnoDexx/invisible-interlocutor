@@ -1,114 +1,104 @@
 # services/mail.py
+import smtplib
 import os
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from flask import url_for
 import secrets
-import datetime
-from threading import Thread
-from flask import current_app
-from flask_mail import Message, Mail
 
 
 class MailService:
-    def __init__(self, app=None, users_db=None):
+    def __init__(self, app, users_db):
         self.app = app
         self.users_db = users_db
-        self.mail = None
-        if app is not None:
-            self.init_app(app)
+        self.smtp_host = os.getenv('SMTP_HOST', 'smtp.yandex.ru')
+        self.smtp_port = int(os.getenv('SMTP_PORT', 465))
+        self.smtp_user = os.getenv('SMTP_USER')
+        self.smtp_password = os.getenv('SMTP_PASSWORD')
+        self.from_email = os.getenv('SMTP_FROM', self.smtp_user)
+        self.use_ssl = os.getenv('SMTP_USE_SSL', 'true').lower() == 'true'
 
-    def init_app(self, app):
-        self.app = app
-        app.config.setdefault('MAIL_SERVER', os.getenv(
-            'MAIL_SERVER', 'smtp.yandex.ru'))
-        app.config.setdefault('MAIL_PORT', int(os.getenv('MAIL_PORT', 587)))
-        app.config.setdefault('MAIL_USE_TLS', os.getenv(
-            'MAIL_USE_TLS', 'true').lower() in ('true', '1', 'yes'))
-        app.config.setdefault('MAIL_USE_SSL', os.getenv(
-            'MAIL_USE_SSL', 'false').lower() in ('true', '1', 'yes'))
-        app.config.setdefault('MAIL_USERNAME', os.getenv('MAIL_USERNAME'))
-        app.config.setdefault('MAIL_PASSWORD', os.getenv('MAIL_PASSWORD'))
-        app.config.setdefault('MAIL_DEFAULT_SENDER',
-                              os.getenv('MAIL_DEFAULT_SENDER'))
-        app.config.setdefault('MAIL_VERIFICATION_TOKEN_EXPIRE_HOURS', 24)
-        app.config.setdefault('MAIL_RESET_TOKEN_EXPIRE_HOURS', 1)
-        self.mail = Mail(app)
+    def send_email(self, to_email, subject, body_text, body_html=None):
+        """Базовый метод отправки письма."""
+        if not self.smtp_user or not self.smtp_password:
+            print("[MailService] SMTP не настроен (проверьте переменные окружения)")
+            return False
 
-    def _send_async_email(self, msg):
-        with self.app.app_context():
-            try:
-                self.mail.send(msg)
-            except Exception as e:
-                current_app.logger.error(f"Ошибка отправки письма: {e}")
+        try:
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = self.from_email
+            msg['To'] = to_email
 
-    def send_email(self, subject, recipients, body=None, html=None):
-        if not recipients:
-            return
-        msg = Message(subject, recipients=recipients, body=body, html=html)
-        Thread(target=self._send_async_email, args=(msg,)).start()
+            part_text = MIMEText(body_text, 'plain', 'utf-8')
+            msg.attach(part_text)
 
-    def generate_verification_token(self):
-        return secrets.token_urlsafe(32)
+            if body_html:
+                part_html = MIMEText(body_html, 'html', 'utf-8')
+                msg.attach(part_html)
 
-    def generate_reset_token(self):
-        return secrets.token_urlsafe(32)
+            if self.use_ssl:
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port) as server:
+                    server.login(self.smtp_user, self.smtp_password)
+                    server.sendmail(self.from_email, [
+                                    to_email], msg.as_string())
+            else:
+                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                    server.starttls()
+                    server.login(self.smtp_user, self.smtp_password)
+                    server.sendmail(self.from_email, [
+                                    to_email], msg.as_string())
+            return True
+        except Exception as e:
+            print(f"[MailService] Ошибка отправки письма: {e}")
+            return False
 
     def send_verification_email(self, user):
-        if not user.email:
-            current_app.logger.warning(
-                f"Нет email для подтверждения: user_id={user.id}")
-            return False
-        if not self.users_db:
-            current_app.logger.error("users_db не передан в MailService")
-            return False
+        """Отправка письма для подтверждения email при регистрации."""
+        token = secrets.token_urlsafe(32)
+        self.users_db.set_verification_token(user.user_id, token)
+        confirm_url = f"{self.app.config['BASE_URL']}/verify-email/{token}"
+        subject = "Подтверждение email"
+        body = f"""
+Здравствуйте, {user.username}!
 
-        token = self.generate_verification_token()
-        self.users_db.set_verification_token(user.id, token)
+Подтвердите свой email, перейдя по ссылке:
+{confirm_url}
 
-        base_url = self.app.config.get('BASE_URL', 'http://localhost:8080')
-        verify_url = f"{base_url}/verify-email/{token}"
-        expire_hours = self.app.config['MAIL_VERIFICATION_TOKEN_EXPIRE_HOURS']
-
-        html = f"""
-        <p>Здравствуйте, {user.username}!</p>
-        <p>Для подтверждения email перейдите по ссылке:</p>
-        <a href="{verify_url}">{verify_url}</a>
-        <p>Ссылка действительна {expire_hours} ч.</p>
-        <p>С уважением,<br>Незримый собеседник</p>
-        """
-        self.send_email(
-            subject='Подтверждение email',
-            recipients=[user.email],
-            body=f"Ссылка: {verify_url}",
-            html=html
-        )
-        return True
+Ссылка действительна 24 часа. Если вы не регистрировались, проигнорируйте это письмо.
+"""
+        html = body.replace('\n', '<br>')
+        return self.send_email(user.email, subject, body, html)
 
     def send_reset_password_email(self, user):
-        if not user.email:
-            current_app.logger.warning(
-                f"Нет email для сброса: user_id={user.id}")
-            return False
-        if not self.users_db:
-            current_app.logger.error("users_db не передан в MailService")
-            return False
-
-        token = self.generate_reset_token()
+        """Отправка письма для сброса пароля."""
+        token = secrets.token_urlsafe(32)
         self.users_db.set_reset_token(user.email, token)
+        reset_url = f"{self.app.config['BASE_URL']}/reset-password/{token}"
+        subject = "Сброс пароля"
+        body = f"""
+Здравствуйте, {user.username}!
 
-        base_url = self.app.config.get('BASE_URL', 'http://localhost:8080')
-        reset_url = f"{base_url}/reset-password/{token}"
-        expire_hours = self.app.config['MAIL_RESET_TOKEN_EXPIRE_HOURS']
+Для сброса пароля перейдите по ссылке:
+{reset_url}
 
-        html = f"""
-        <p>Здравствуйте, {user.username}!</p>
-        <p>Для сброса пароля перейдите по ссылке:</p>
-        <a href="{reset_url}">{reset_url}</a>
-        <p>Ссылка действительна {expire_hours} ч.</p>
-        <p>С уважением,<br>Незримый собеседник</p>
-        """
-        self.send_email(
-            subject='Сброс пароля',
-            recipients=[user.email],
-            body=f"Ссылка: {reset_url}",
-            html=html
-        )
-        return True
+Ссылка действительна 1 час. Если вы не запрашивали сброс, проигнорируйте это письмо.
+"""
+        html = body.replace('\n', '<br>')
+        return self.send_email(user.email, subject, body, html)
+
+    # ========== НОВЫЙ МЕТОД ДЛЯ СМЕНЫ EMAIL (через токен) ==========
+    def send_email_change_confirmation(self, user, new_email, token):
+        """Отправка письма для подтверждения смены email."""
+        confirm_url = f"{self.app.config['BASE_URL']}/confirm-email-change/{token}"
+        subject = "Подтверждение смены email"
+        body = f"""
+Здравствуйте, {user.username}!
+
+Вы запросили смену email на {new_email}. Для подтверждения перейдите по ссылке:
+{confirm_url}
+
+Ссылка действительна 24 часа. Если вы не запрашивали смену email, проигнорируйте это письмо.
+"""
+        html = body.replace('\n', '<br>')
+        return self.send_email(new_email, subject, body, html)

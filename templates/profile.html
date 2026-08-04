@@ -6,9 +6,9 @@ content %}
       <div class="card-body">
         <h2 class="card-title text-center mb-4">Личный кабинет</h2>
 
+        <!-- Форма обновления email (теперь через токен) -->
         <form method="post" action="{{ url_for('update_profile') }}" novalidate>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-
           <div class="mb-3">
             <label for="username" class="form-label">Имя пользователя</label>
             <input
@@ -20,7 +20,6 @@ content %}
             />
             <div class="form-text">Имя пользователя нельзя изменить.</div>
           </div>
-
           <div class="mb-3">
             <label for="email" class="form-label">Электронная почта</label>
             <input
@@ -33,42 +32,92 @@ content %}
               required
             />
             <div class="form-text">
-              Укажите актуальный email для уведомлений.
+              Укажите новый email. На него придёт письмо для подтверждения.
             </div>
           </div>
-
-          <!-- Блок статуса подтверждения email -->
           <div class="mb-3">
             {% if user.email_verified %}
-            <div class="text-success">
-              <span>✅ Email подтверждён</span>
-            </div>
+            <div class="text-success">✅ Email подтверждён</div>
             {% else %}
-            <div class="text-warning">
-              <span>⚠️ Email не подтверждён</span>
-            </div>
+            <div class="text-warning">⚠️ Email не подтверждён</div>
             <div class="mt-2">
               <a
                 href="{{ url_for('request_verification') }}"
                 class="btn btn-outline-primary btn-sm"
+                >Запросить подтверждение</a
               >
-                Запросить подтверждение
-              </a>
             </div>
             {% endif %}
           </div>
-
           <button type="submit" class="btn btn-primary w-100">
             Обновить email
           </button>
         </form>
 
-        <div class="mt-3 text-center">
+        <hr class="my-4" />
+
+        <!-- Смена пароля -->
+        <h5 class="card-title">🔑 Сменить пароль</h5>
+        <form
+          method="post"
+          action="{{ url_for('change_password') }}"
+          novalidate
+        >
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          <div class="mb-3">
+            <input
+              type="password"
+              class="form-control"
+              name="old_password"
+              placeholder="Старый пароль"
+              required
+            />
+          </div>
+          <div class="mb-3">
+            <input
+              type="password"
+              class="form-control"
+              name="new_password"
+              placeholder="Новый пароль (мин. 6 символов)"
+              required
+            />
+          </div>
+          <button type="submit" class="btn btn-secondary w-100">
+            Изменить пароль
+          </button>
+        </form>
+
+        <hr class="my-4" />
+
+        <!-- Смена имени пользователя -->
+        <h5 class="card-title">🏷️ Сменить имя пользователя</h5>
+        <form
+          method="post"
+          action="{{ url_for('change_username') }}"
+          novalidate
+        >
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          <div class="mb-3">
+            <input
+              type="text"
+              class="form-control"
+              name="new_username"
+              placeholder="Новое имя"
+              required
+            />
+          </div>
+          <button type="submit" class="btn btn-secondary w-100">
+            Обновить имя
+          </button>
+        </form>
+
+        <div class="mt-4 text-center">
           <a href="{{ url_for('index') }}">Вернуться в чат</a>
         </div>
       </div>
     </div>
 
+    <!-- Flash-сообщения -->
     {% with messages = get_flashed_messages(with_categories=true) %} {% if
     messages %}
     <div class="mt-3">
