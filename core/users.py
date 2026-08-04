@@ -106,7 +106,6 @@ class Users:
             ("verification_token_expires", "Timestamp"),
             ("reset_token", "Text"),
             ("reset_token_expires", "Timestamp"),
-            # Новые колонки для смены email через токен
             ("pending_email", "Text"),
             ("email_change_token", "Text"),
             ("email_change_token_expires", "Timestamp"),
@@ -428,7 +427,7 @@ class Users:
             return self.get_user_by_id(row['user_id'])
         return None
 
-    # ========== НОВЫЕ МЕТОДЫ ДЛЯ ПРОФИЛЯ ==========
+    # ========== МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ПРОФИЛЕМ ==========
 
     def change_password(self, user_id: str, old_password: str, new_password: str) -> bool:
         user = self.get_user_by_id(user_id)
@@ -461,12 +460,9 @@ class Users:
         """
         prepared = session.prepare(query)
         tx = session.transaction()
-        tx.execute(prepared, {"$user_id": user_id,
-                   "$new_username": new_username})
+        tx.execute(prepared, {"$user_id": user_id, "$new_username": new_username})
         tx.commit()
         return True
-
-    # ========== НОВЫЙ МЕТОД ДЛЯ СМЕНЫ EMAIL ЧЕРЕЗ ТОКЕН ==========
 
     def set_pending_email(self, user_id: str, new_email: str, token: str, expires_hours=24):
         expires_at = datetime.datetime.now() + datetime.timedelta(hours=expires_hours)
@@ -527,9 +523,24 @@ class Users:
         """
         prepared_update = session.prepare(query_update)
         tx_update = session.transaction()
-        tx_update.execute(prepared_update, {
-                          "$user_id": user_id, "$new_email": new_email})
+        tx_update.execute(prepared_update, {"$user_id": user_id, "$new_email": new_email})
         tx_update.commit()
+        return True
+
+    # ========== УДАЛЕНИЕ ПОЛЬЗОВАТЕЛЯ ==========
+    def delete_user(self, user_id: str) -> bool:
+        """Удаляет запись пользователя из таблицы users."""
+        session = self._get_session()
+        query = """
+            DECLARE $user_id AS Text;
+            DELETE FROM users WHERE user_id = $user_id;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        tx.execute(prepared, {"$user_id": user_id})
+        tx.commit()
+        if debug:
+            print(f"✅ Пользователь {user_id} удалён из users")
         return True
 
     # =====================================================

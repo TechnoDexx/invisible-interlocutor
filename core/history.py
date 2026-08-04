@@ -4,6 +4,10 @@ import os
 import time
 from ydb import Driver
 from ydb.credentials import AccessTokenCredentials
+from dotenv import load_dotenv
+
+load_dotenv()
+debug = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes')
 
 
 class MessageHistory:
@@ -325,3 +329,19 @@ class MessageHistory:
         tx = session.transaction()
         tx.execute(prepared, {"$user_id": user_id, "$session_id": session_id})
         tx.commit()
+
+    # ========== НОВЫЙ МЕТОД ДЛЯ УДАЛЕНИЯ ВСЕХ СООБЩЕНИЙ ПОЛЬЗОВАТЕЛЯ ==========
+    def delete_user_history(self, user_id: str) -> bool:
+        """Удаляет все сообщения пользователя из таблицы messages."""
+        session = self._get_session()
+        query = """
+            DECLARE $user_id AS Text;
+            DELETE FROM messages WHERE user_id = $user_id;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        tx.execute(prepared, {"$user_id": user_id})
+        tx.commit()
+        if debug:
+            print(f"✅ История сообщений для пользователя {user_id} удалена")
+        return True

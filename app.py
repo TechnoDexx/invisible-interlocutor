@@ -1,18 +1,23 @@
 # app.py
 import re
 import secrets
-from flask import Flask, render_template, request, jsonify, make_response, redirect, flash
+import datetime
+import json
+import io
+import os
+import uuid
+import threading
+from flask import Flask, render_template, request, jsonify, make_response, redirect, flash, send_file
+from flask_mail import Mail
+from flask_wtf import CSRFProtect
+from flask_login import LoginManager, login_user, logout_user, current_user, login_required
+from dotenv import load_dotenv
+
 from core.ai_client import AIClient
 from core.session import Session
 from core.users import Users
 from core.history import MessageHistory
 from services import MailService
-import os
-import uuid
-import threading
-from dotenv import load_dotenv
-from flask_wtf import CSRFProtect
-from flask_login import LoginManager, login_user, logout_user, current_user, login_required
 
 load_dotenv()
 debug = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes')
@@ -20,13 +25,28 @@ app_debug = os.getenv('APP_DEBUG', '').lower() in ('true', '1', 'yes')
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# --- Конфигурация для почтового сервиса (из APP_BASE_URL) ---
+# --- Конфигурация Flask-Mail ---
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.yandex.ru')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 465))
+app.config['MAIL_USE_SSL'] = os.getenv(
+    'MAIL_USE_SSL', 'True').lower() == 'true'
+app.config['MAIL_USE_TLS'] = os.getenv(
+    'MAIL_USE_TLS', 'False').lower() == 'true'
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv(
+    'MAIL_DEFAULT_SENDER', app.config['MAIL_USERNAME'])
 app.config['BASE_URL'] = os.getenv('APP_BASE_URL', 'http://localhost:8080')
+
+# Инициализация Flask-Mail
+mail = Mail(app)
 
 csrf = CSRFProtect(app)
 users_db = Users()
 history_db = MessageHistory()
-mail_service = MailService(app, users_db)
+
+# Передаём mail в MailService
+mail_service = MailService(app, users_db, mail)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -60,7 +80,6 @@ def save_message_async(user_id, session_id, role, content, timestamp=None):
     except Exception as e:
         print(f"[ASYNC SAVE] Ошибка сохранения: {e}")
 
-
 # ---------- МАРШРУТЫ ----------
 
 
@@ -73,7 +92,6 @@ def index():
         sessions[session_id] = Session()
     session = get_session(session_id)
 
-    # Загружаем всю историю пользователя (все сессии), если она ещё не загружена
     if current_user.is_authenticated and not session.history:
         full_history = history_db.get_full_history(current_user.id, None)
         if debug:
@@ -129,14 +147,12 @@ def login():
                 session_id = str(uuid.uuid4())
             session = get_session(session_id)
 
-            # Перенос анонимной истории в YDB
             if session.history and session.user_id is None:
                 history_db.save_history(user.id, session_id, session.history)
                 session.clear()
 
             session.user_id = user.id
 
-            # Принудительная загрузка истории
             full_history = history_db.get_full_history(user.id, None)
             if debug:
                 print(
@@ -146,7 +162,6 @@ def login():
             else:
                 session.history = []
 
-            # Восстановление контекста (асинхронно)
             session.set_restoring(True)
 
             def restore_context():
@@ -192,8 +207,9 @@ def logout():
 def profile():
     return render_template('profile.html', user=current_user)
 
+# ========== СМЕНА EMAIL (через токен) ==========
 
-# ========== ИЗМЕНЁННЫЙ МАРШРУТ ОБНОВЛЕНИЯ EMAIL (через токен) ==========
+
 @app.route('/profile/update', methods=['POST'])
 @login_required
 def update_profile():
@@ -202,11 +218,9 @@ def update_profile():
         flash('Некорректный email', 'danger')
         return redirect('/profile')
 
-    # Генерируем токен для подтверждения смены email
     token = secrets.token_urlsafe(32)
     users_db.set_pending_email(current_user.id, new_email, token)
 
-    # Отправляем письмо на новый email
     if mail_service.send_email_change_confirmation(current_user, new_email, token):
         flash(
             f'Письмо для подтверждения отправлено на {new_email}. Перейдите по ссылке для завершения смены.', 'success')
@@ -216,7 +230,6 @@ def update_profile():
     return redirect('/profile')
 
 
-# ========== НОВЫЙ МАРШРУТ ПОДТВЕРЖДЕНИЯ СМЕНЫ EMAIL ==========
 @app.route('/confirm-email-change/<token>')
 def confirm_email_change(token):
     if users_db.confirm_email_change(token):
@@ -225,8 +238,9 @@ def confirm_email_change(token):
         flash('Ссылка недействительна или истекла.', 'danger')
     return redirect('/profile')
 
+# ========== СМЕНА ПАРОЛЯ ==========
 
-# ========== НОВЫЕ МАРШРУТЫ ДЛЯ СМЕНЫ ПАРОЛЯ И ИМЕНИ ==========
+
 @app.route('/profile/change-password', methods=['POST'])
 @login_required
 def change_password():
@@ -244,6 +258,8 @@ def change_password():
         flash('Неверный старый пароль', 'danger')
     return redirect('/profile')
 
+# ========== СМЕНА ИМЕНИ ==========
+
 
 @app.route('/profile/change-username', methods=['POST'])
 @login_required
@@ -259,7 +275,37 @@ def change_username():
         flash('Это имя уже занято', 'danger')
         return redirect('/profile')
 
-# ==============================================
+# ========== УДАЛЕНИЕ АККАУНТА ==========
+
+
+@app.route('/profile/delete-account', methods=['POST'])
+@login_required
+def delete_account():
+    password = request.form.get('password', '').strip()
+    if not password:
+        flash('Введите пароль для подтверждения удаления.', 'danger')
+        return redirect('/profile')
+
+    if not users_db.verify_user(current_user.username, password):
+        flash('Неверный пароль.', 'danger')
+        return redirect('/profile')
+
+    user_id = current_user.id
+    username = current_user.username
+
+    history_db.delete_user_history(user_id)
+    users_db.delete_user(user_id)
+
+    logout_user()
+
+    session_id = request.cookies.get('session_id')
+    if session_id and session_id in sessions:
+        sessions.pop(session_id, None)
+
+    flash(f'Аккаунт "{username}" и все ваши данные удалены.', 'success')
+    return redirect('/')
+
+# ========== ПОДТВЕРЖДЕНИЕ EMAIL ПРИ РЕГИСТРАЦИИ ==========
 
 
 @app.route('/request-verification', methods=['GET', 'POST'])
@@ -289,6 +335,8 @@ def verify_email(token):
         flash(message, 'danger')
         return redirect('/login')
 
+# ========== ВОССТАНОВЛЕНИЕ ПАРОЛЯ ==========
+
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
@@ -301,11 +349,7 @@ def forgot_password():
         user = users_db.get_user_by_email(email)
         if user:
             mail_service.send_reset_password_email(user)
-            flash(
-                'Если пользователь с таким email существует, ссылка для сброса пароля отправлена.', 'info')
-        else:
-            flash(
-                'Если пользователь с таким email существует, ссылка для сброса пароля отправлена.', 'info')
+        flash('Если пользователь с таким email существует, ссылка для сброса пароля отправлена.', 'info')
         return redirect('/login')
 
     return render_template('forgot_password.html')
@@ -327,7 +371,6 @@ def reset_password():
     if not token or not new_password:
         flash('Необходимо указать новый пароль.', 'danger')
         return render_template('reset_password.html', token=token), 400
-
     if len(new_password) < 6:
         flash('Пароль должен содержать минимум 6 символов.', 'danger')
         return render_template('reset_password.html', token=token), 400
@@ -340,47 +383,66 @@ def reset_password():
         flash(message, 'danger')
         return redirect('/login')
 
-
-@app.route('/status')
-def status():
-    session_id = request.cookies.get('session_id')
-    if not session_id or session_id not in sessions:
-        return jsonify({'restoring': False})
-    return jsonify({'restoring': sessions[session_id].restoring})
+# ========== ЭКСПОРТ / ИМПОРТ ИСТОРИИ ДЛЯ АВТОРИЗОВАННЫХ ==========
 
 
-@app.route('/send', methods=['POST'])
-def send():
-    session_id = request.cookies.get('session_id')
-    if not session_id:
-        return jsonify({'error': 'Сессия не найдена'}), 400
-    session = get_session(session_id)
-    user_message = request.form.get('user_message', '').strip()
-    if not user_message:
-        return jsonify({'error': 'Сообщение пустое'}), 400
+@app.route('/profile/download-history')
+@login_required
+def download_history():
+    history = history_db.get_full_history(current_user.id, session_id=None)
+    if not history:
+        flash('История диалогов пуста.', 'warning')
+        return redirect('/profile')
 
-    session.add_user_message(user_message)
-    if session.user_id:
-        threading.Thread(
-            target=save_message_async,
-            args=(session.user_id, session_id, "user", user_message),
-            daemon=True
-        ).start()
+    json_data = json.dumps(history, ensure_ascii=False, indent=2)
+    file_like = io.BytesIO(json_data.encode('utf-8'))
+
+    return send_file(
+        file_like,
+        as_attachment=True,
+        download_name=f'history_{current_user.username}_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.json',
+        mimetype='application/json'
+    )
+
+
+@app.route('/profile/upload-history', methods=['POST'])
+@login_required
+def upload_history():
+    if 'history_file' not in request.files:
+        flash('Файл не выбран.', 'danger')
+        return redirect('/profile')
+
+    file = request.files['history_file']
+    if file.filename == '':
+        flash('Файл не выбран.', 'danger')
+        return redirect('/profile')
+
+    if not file.filename.endswith('.json'):
+        flash('Файл должен быть в формате JSON.', 'danger')
+        return redirect('/profile')
 
     try:
-        response_text = ai_client.ask(session.history)
-        session.add_assistant_message(response_text)
-        if session.user_id:
-            threading.Thread(
-                target=save_message_async,
-                args=(session.user_id, session_id, "assistant", response_text),
-                daemon=True
-            ).start()
-        return jsonify({'reply': response_text})
+        data = json.load(file.stream)
+        if not isinstance(data, list):
+            flash('Некорректный формат: ожидается список сообщений.', 'danger')
+            return redirect('/profile')
+
+        for msg in data:
+            if not isinstance(msg, dict) or 'role' not in msg or 'content' not in msg:
+                flash('Неверная структура сообщений.', 'danger')
+                return redirect('/profile')
+
+        session_id = str(uuid.uuid4())
+        history_db.save_history(current_user.id, session_id, data)
+        flash(f'Импортировано {len(data)} сообщений.', 'success')
+    except json.JSONDecodeError:
+        flash('Некорректный JSON-файл.', 'danger')
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        flash(f'Ошибка импорта: {e}', 'danger')
+
+    return redirect('/profile')
+
+# ========== МАРШРУТЫ ДЛЯ АНОНИМНЫХ ПОЛЬЗОВАТЕЛЕЙ (СОХРАНЕНИЕ/ЗАГРУЗКА СЕССИИ) ==========
 
 
 @app.route('/save', methods=['POST'])
@@ -424,6 +486,50 @@ def load_history():
         return jsonify({'error': f'Файл {filename} не найден'}), 404
     except Exception as e:
         return jsonify({'error': f'Ошибка: {str(e)}'}), 500
+
+# ========== ВСПОМОГАТЕЛЬНЫЕ МАРШРУТЫ ==========
+
+
+@app.route('/status')
+def status():
+    session_id = request.cookies.get('session_id')
+    if not session_id or session_id not in sessions:
+        return jsonify({'restoring': False})
+    return jsonify({'restoring': sessions[session_id].restoring})
+
+
+@app.route('/send', methods=['POST'])
+def send():
+    session_id = request.cookies.get('session_id')
+    if not session_id:
+        return jsonify({'error': 'Сессия не найдена'}), 400
+    session = get_session(session_id)
+    user_message = request.form.get('user_message', '').strip()
+    if not user_message:
+        return jsonify({'error': 'Сообщение пустое'}), 400
+
+    session.add_user_message(user_message)
+    if session.user_id:
+        threading.Thread(
+            target=save_message_async,
+            args=(session.user_id, session_id, "user", user_message),
+            daemon=True
+        ).start()
+
+    try:
+        response_text = ai_client.ask(session.history)
+        session.add_assistant_message(response_text)
+        if session.user_id:
+            threading.Thread(
+                target=save_message_async,
+                args=(session.user_id, session_id, "assistant", response_text),
+                daemon=True
+            ).start()
+        return jsonify({'reply': response_text})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
