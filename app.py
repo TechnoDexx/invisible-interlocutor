@@ -1,4 +1,6 @@
 # app.py
+import sys
+sys.dont_write_bytecode = True
 import re
 import secrets
 import datetime
