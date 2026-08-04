@@ -404,6 +404,8 @@ def download_history():
         mimetype='application/json'
     )
 
+# ========== ИЗМЕНЁННЫЙ МАРШРУТ ИМПОРТА (с проверкой user_id) ==========
+
 
 @app.route('/profile/upload-history', methods=['POST'])
 @login_required
@@ -427,11 +429,24 @@ def upload_history():
             flash('Некорректный формат: ожидается список сообщений.', 'danger')
             return redirect('/profile')
 
+        # Проверяем структуру
         for msg in data:
             if not isinstance(msg, dict) or 'role' not in msg or 'content' not in msg:
                 flash('Неверная структура сообщений.', 'danger')
                 return redirect('/profile')
 
+        # Проверяем user_id (если присутствует)
+        file_user_id = None
+        for msg in data:
+            if 'user_id' in msg and msg['user_id'] is not None:
+                file_user_id = msg['user_id']
+                break
+
+        if file_user_id is not None and file_user_id != current_user.id:
+            flash('Этот файл принадлежит другому пользователю. Импорт отменён.', 'danger')
+            return redirect('/profile')
+
+        # Если user_id отсутствует или совпадает — импортируем с привязкой к текущему
         session_id = str(uuid.uuid4())
         history_db.save_history(current_user.id, session_id, data)
         flash(f'Импортировано {len(data)} сообщений.', 'success')

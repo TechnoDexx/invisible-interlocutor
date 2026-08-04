@@ -255,9 +255,10 @@ class MessageHistory:
             markers.append({"role": last['role'], "content": last['content']})
         return markers
 
+    # ========== ИЗМЕНЁННЫЙ МЕТОД get_full_history (добавлен user_id) ==========
     def get_full_history(self, user_id, session_id=None):
         """
-        Возвращает полную историю сообщений.
+        Возвращает полную историю сообщений с полем user_id.
         Если session_id=None — возвращает все сообщения пользователя.
         Если session_id указан — только для этой сессии.
         """
@@ -267,7 +268,7 @@ class MessageHistory:
         if session_id is None:
             query = """
                 DECLARE $user_id AS Text;
-                SELECT role, content, timestamp FROM messages
+                SELECT user_id, role, content, timestamp FROM messages
                 WHERE user_id = $user_id
                 ORDER BY timestamp ASC;
             """
@@ -277,22 +278,25 @@ class MessageHistory:
             query = """
                 DECLARE $user_id AS Text;
                 DECLARE $session_id AS Text;
-                SELECT role, content, timestamp FROM messages
+                SELECT user_id, role, content, timestamp FROM messages
                 WHERE user_id = $user_id AND session_id = $session_id
                 ORDER BY timestamp ASC;
             """
             prepared = session.prepare(query)
-            result = tx.execute(prepared, {"$user_id": user_id, "$session_id": session_id})
+            result = tx.execute(
+                prepared, {"$user_id": user_id, "$session_id": session_id})
 
         history = []
         for row in result[0].rows:
             ts = self._parse_timestamp(row['timestamp'])
             history.append({
+                "user_id": row['user_id'],          # добавлено поле user_id
                 "role": row['role'],
                 "content": row['content'],
                 "timestamp": ts.isoformat() if ts else None
             })
         return history
+    # ====================================================================
 
     def get_last_message(self, user_id, session_id):
         session = self._get_session()
@@ -330,7 +334,7 @@ class MessageHistory:
         tx.execute(prepared, {"$user_id": user_id, "$session_id": session_id})
         tx.commit()
 
-    # ========== НОВЫЙ МЕТОД ДЛЯ УДАЛЕНИЯ ВСЕХ СООБЩЕНИЙ ПОЛЬЗОВАТЕЛЯ ==========
+    # ========== МЕТОД ДЛЯ УДАЛЕНИЯ ВСЕХ СООБЩЕНИЙ ПОЛЬЗОВАТЕЛЯ ==========
     def delete_user_history(self, user_id: str) -> bool:
         """Удаляет все сообщения пользователя из таблицы messages."""
         session = self._get_session()
