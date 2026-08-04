@@ -460,6 +460,18 @@ def upload_history():
 # ========== МАРШРУТЫ ДЛЯ АНОНИМНЫХ ПОЛЬЗОВАТЕЛЕЙ (СОХРАНЕНИЕ/ЗАГРУЗКА СЕССИИ) ==========
 
 
+def _sanitize_history_filename(filename, session_id):
+    """
+    Безопасное имя файла истории: только имя, без путей (basename),
+    и только с расширением .json. Иначе - имя по умолчанию.
+    """
+    filename = (filename or '').strip()
+    base = os.path.basename(filename)
+    if not base.endswith('.json'):
+        base = f'history_{session_id[:8]}.json'
+    return base
+
+
 @app.route('/save', methods=['POST'])
 def save_history():
     session_id = request.cookies.get('session_id')
@@ -469,8 +481,7 @@ def save_history():
     if not session.history:
         return jsonify({'error': 'История пуста'}), 400
     filename = request.form.get('filename', '').strip()
-    if not filename:
-        filename = f'history_{session_id[:8]}.json'
+    filename = _sanitize_history_filename(filename, session_id)
     try:
         session.save(filename)
         return jsonify({'message': f'История сохранена в {filename}'})
@@ -486,6 +497,7 @@ def load_history():
     filename = request.form.get('filename', '').strip()
     if not filename:
         return jsonify({'error': 'Имя файла не указано'}), 400
+    filename = _sanitize_history_filename(filename, session_id)
     session = get_session(session_id)
     try:
         old_history = session.history.copy()
