@@ -349,3 +349,6 @@ class MessageHistory:
         if debug:
             print(f"✅ История сообщений для пользователя {user_id} удалена")
         return True
+
+    def close(self):
+        self.driver.stop()

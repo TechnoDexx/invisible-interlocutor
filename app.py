@@ -9,6 +9,7 @@ import io
 import os
 import uuid
 import threading
+import atexit
 from flask import Flask, render_template, request, jsonify, make_response, redirect, flash, send_file
 from flask_mail import Mail
 from flask_wtf import CSRFProtect
