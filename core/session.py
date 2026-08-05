@@ -1,17 +1,14 @@
-import sys
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 
 
 class Session:
     """
-    Управляет историей диалога: добавление, сохранение, загрузка, вывод.
+    Управляет историей диалога: добавление, сохранение, загрузка.
     Поддерживает:
     - timestamp для каждого сообщения (ISO 8601, UTC)
     - user_id (может быть None для анонимных сессий)
     - обратную совместимость со старыми файлами (без timestamp и user_id)
-    - метод get_context_markers() для «хитрого» восстановления контекста
-    - _safe_input для работы в Docker/консоли
     - автоматическую привязку user_id при загрузке, если он установлен в сессии
     - флаг restoring для индикации процесса восстановления контекста
     """
@@ -21,20 +18,6 @@ class Session:
         self.filename = filename
         self.user_id = user_id  # храним на уровне сессии
         self.restoring = False   # флаг восстановления контекста
-
-    @staticmethod
-    def _safe_input(prompt=""):
-        """
-        Безопасный ввод из консоли, работающий в Docker и без TTY.
-        """
-        if prompt:
-            sys.stdout.write(prompt)
-            sys.stdout.flush()
-        raw = sys.stdin.buffer.readline()
-        try:
-            return raw.decode('utf-8').rstrip('\n')
-        except UnicodeDecodeError:
-            return raw.decode('utf-8', errors='replace').rstrip('\n')
 
     def add_user_message(self, text, user_id=None):
         if user_id is None:
@@ -73,42 +56,28 @@ class Session:
 
     def save(self, filename=None):
         if not self.history:
-            print("История пуста, сохранять нечего.")
             return
         if filename is None:
-            filename = self._safe_input(
-                "Введите имя файла (с расширением): ").strip()
-            if not filename:
-                print("Имя файла не указано. Сохранение отменено.")
-                return
+            return
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(self.history, f, ensure_ascii=False, indent=2)
-        print(f"История сохранена в {filename}")
 
     def load(self, filename=None):
         if filename is None:
-            filename = self._safe_input(
-                "Введите имя файла для загрузки: ").strip()
-            if not filename:
-                print("Имя файла не указано.")
-                return
+            return
         try:
             with open(filename, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except FileNotFoundError:
-            print(f"Файл '{filename}' не найден.")
-            return
+            raise
         except json.JSONDecodeError:
-            print(f"Файл '{filename}' содержит некорректный JSON.")
-            return
+            raise
         if not isinstance(data, list):
-            print("Данные в файле не являются списком.")
-            return
+            raise ValueError("Данные в файле не являются списком.")
         for i, msg in enumerate(data):
             if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
-                print(
-                    f"Сообщение #{i+1} имеет неверную структуру, загрузка прервана.")
-                return
+                raise ValueError(
+                    f"Сообщение #{i+1} имеет неверную структуру")
         # Добавляем отсутствующие поля для обратной совместимости
         for msg in data:
             if "timestamp" not in msg:
@@ -116,34 +85,7 @@ class Session:
             if "user_id" not in msg or msg["user_id"] is None:
                 msg["user_id"] = self.user_id if self.user_id is not None else None
 
-        if self.history:
-            answer = self._safe_input(
-                "Текущая история не пуста. Заменить её загруженной? (y/n): ").strip().lower()
-            if answer not in ("y", "да", "yes"):
-                print("Загрузка отменена.")
-                return
         self.history = data
-        print(
-            f"Загружено {len(self.history)} сообщений из файла '{filename}'.")
-
-    def print(self):
-        if not self.history:
-            print("История пуста.")
-            return
-        print("\n=== ИСТОРИЯ ДИАЛОГА ===")
-        for i, msg in enumerate(self.history, 1):
-            role = "Вы" if msg["role"] == "user" else "Собеседник"
-            timestamp = msg.get("timestamp", "")
-            if timestamp:
-                try:
-                    dt = datetime.fromisoformat(timestamp)
-                    time_str = dt.strftime("%H:%M:%S")
-                except:
-                    time_str = timestamp
-                print(f"{i}. {role} [{time_str}]: {msg['content']}")
-            else:
-                print(f"{i}. {role}: {msg['content']}")
-        print("=== КОНЕЦ ИСТОРИИ ===\n")
 
     def get_context_markers(self):
         if not self.history:
