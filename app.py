@@ -48,6 +48,10 @@ csrf = CSRFProtect(app)
 users_db = Users()
 history_db = MessageHistory()
 
+# Закрываем YDB-driver при завершении процесса, чтобы не оставлять открытые соединения
+atexit.register(users_db.close)
+atexit.register(history_db.close)
+
 # Передаём mail в MailService
 mail_service = MailService(app, users_db, mail)
 
