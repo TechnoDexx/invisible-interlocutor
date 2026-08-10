@@ -15,6 +15,60 @@
   </div>
 </header>
 
+<!-- Баннер неотвеченного вопроса (серверный: запись найдена в YDB) -->
+{% if pending_q %}
+<div
+  class="alert alert-warning"
+  id="server-pending-alert"
+  data-qid="{{ pending_q.id }}"
+>
+  ❓ Вы не получили ответ на вопрос: «{{ pending_q.question_text }}»
+  <form
+    method="post"
+    action="{{ url_for('retry_question') }}"
+    style="display: inline"
+    class="pending-retry-form"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <button type="submit" class="btn btn-sm btn-outline-primary">
+      Повторить вопрос
+    </button>
+  </form>
+  <form
+    method="post"
+    action="{{ url_for('pending_dismiss') }}"
+    style="display: inline"
+    class="pending-dismiss-form"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <input type="hidden" name="qid" value="{{ pending_q.id }}" />
+    <button type="submit" class="btn btn-sm btn-outline-secondary">
+      Пропустить
+    </button>
+  </form>
+</div>
+{% endif %}
+
+<!-- Баннер неотвеченного вопроса (клиентский fallback: YDB недоступна, вопрос из localStorage) -->
+<div
+  id="local-pending-alert"
+  class="alert alert-warning"
+  style="display: none"
+  data-qid=""
+>
+  <span id="local-pending-text"></span>
+  <button type="button" class="btn btn-sm btn-outline-primary" id="local-retry-btn">
+    Повторить вопрос
+  </button>
+  <button
+    type="button"
+    class="btn btn-sm btn-outline-secondary"
+    id="local-dismiss-btn"
+  >
+    Пропустить
+  </button>
+</div>
+
 <div class="chat-box" id="chatBox" style="height: 60vh; overflow-y: auto">
   {% for message in history %}
   <div class="message {{ message.role }}">{{ message.content }}</div>
@@ -88,6 +142,71 @@
     const msgInput = document.getElementById("msg-input");
     const chatBox = document.getElementById("chatBox");
 
+    // ---- Утилиты неотвеченных вопросов (localStorage) ----
+    function getCookieVal(name) {
+      const m = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
+      return m ? m.pop() : "";
+    }
+    function getQKey() {
+      return "pending_questions:" + (getCookieVal("session_id") || "anon");
+    }
+    function readLocalPending() {
+      try {
+        return JSON.parse(localStorage.getItem(getQKey()) || "[]");
+      } catch (e) {
+        return [];
+      }
+    }
+    function writeLocalPending(arr) {
+      try {
+        localStorage.setItem(getQKey(), JSON.stringify(arr));
+      } catch (e) {
+        /* localStorage недоступен — молча пропускаем */
+      }
+    }
+    function addLocalPending(item) {
+      const arr = readLocalPending();
+      arr.push(item);
+      writeLocalPending(arr);
+    }
+    function removeLocalPending(qid) {
+      writeLocalPending(readLocalPending().filter((it) => it.id !== qid));
+    }
+    function getCsrfToken() {
+      const input = document.querySelector(
+        '#send-form input[name="csrf_token"]',
+      );
+      return input ? input.value : "";
+    }
+    function syncLocalQueue() {
+      const items = readLocalPending();
+      if (!items.length) return Promise.resolve(false);
+      return fetch("/api/pending_sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+        body: JSON.stringify({ items }),
+      })
+        .then((res) => res.json())
+        .then(() => {
+          // Синк прошёл: локальные копии больше не нужны, всё в YDB
+          items.forEach((it) => removeLocalPending(it.id));
+          return true;
+        })
+        .catch(() => false);
+    }
+    function syncOne(item) {
+      return fetch("/api/pending_sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+        body: JSON.stringify({ items: [item] }),
+      })
+        .then(() => {
+          removeLocalPending(item.id);
+          return true;
+        })
+        .catch(() => false);
+    }
+
     if (sendForm) {
       sendForm.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -95,8 +214,25 @@
         const text = msgInput.value.trim();
         if (!text) return;
 
+        // qid генерируется на клиенте — один id для localStorage и YDB
+        const qid = (window.crypto.randomUUID
+          ? window.crypto.randomUUID()
+          : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+              const r = (Math.random() * 16) | 0;
+              const v = c === "x" ? r : (r & 0x3) | 0x8;
+              return v.toString(16);
+            }));
+
         const formData = new FormData(sendForm);
+        formData.set("qid", qid);
         msgInput.value = "";
+
+        // Страховка: вопрос живёт в localStorage сразу, до всякой сети
+        addLocalPending({
+          id: qid,
+          question_text: text,
+          timestamp: new Date().toISOString(),
+        });
 
         const userDiv = document.createElement("div");
         userDiv.className = "message user";
@@ -112,12 +248,15 @@
           const data = await response.json();
 
           if (data.reply) {
+            // Ответ получен — локальная страховка больше не нужна
+            removeLocalPending(data.qid || qid);
             const assistantDiv = document.createElement("div");
             assistantDiv.className = "message assistant";
             assistantDiv.textContent = data.reply;
             chatBox.appendChild(assistantDiv);
             chatBox.scrollTop = chatBox.scrollHeight;
           } else {
+            // Ошибка AI — вопрос остаётся pending и локально, и в YDB
             const errorDiv = document.createElement("div");
             errorDiv.className = "message assistant";
             errorDiv.textContent = "Ошибка: " + (data.error || "неизвестно");
@@ -125,6 +264,7 @@
             chatBox.scrollTop = chatBox.scrollHeight;
           }
         } catch (err) {
+          // Сеть оборвалась — локальная копия гарантирует, что вопрос не потерян
           const errorDiv = document.createElement("div");
           errorDiv.className = "message assistant";
           errorDiv.textContent = "Ошибка соединения";
@@ -185,6 +325,80 @@
         } catch (err) {
           alert("Ошибка соединения");
         }
+      });
+    }
+
+    // ---- Неотвеченные вопросы: sync + баннер ----
+    const serverAlert = document.getElementById("server-pending-alert");
+    const localAlert = document.getElementById("local-pending-alert");
+
+    function maybeShowLocalBanner() {
+      if (serverAlert) return; // сервер уже показал свой баннер из YDB
+      const items = readLocalPending();
+      if (!items.length) return;
+      const latest = items[items.length - 1];
+      localAlert.dataset.qid = latest.id;
+      document.getElementById("local-pending-text").textContent =
+        "❓ Вы не получили ответ на вопрос: «" + latest.question_text + "»";
+      localAlert.style.display = "block";
+    }
+
+    if (localAlert) {
+      // «Повторить» из локального баннера
+      document.getElementById("local-retry-btn").addEventListener("click", async () => {
+        const qid = localAlert.dataset.qid;
+        const item = readLocalPending().find((it) => it.id === qid);
+        if (!item) return;
+        // Сначала пробуем переложить в YDB, затем штатный /retry-question
+        const synced = await syncOne(item);
+        if (synced) {
+          // Серверное ретраи читает pending по сессии сама
+          const body = new FormData();
+          body.set("csrf_token", getCsrfToken());
+          await fetch("/retry-question", { method: "POST", body });
+        } else {
+          // YDB недоступна — вопрос уходит в AI напрямую через /send со своим qid
+          const body = new FormData();
+          body.set("user_message", item.question_text);
+          body.set("qid", qid);
+          body.set("csrf_token", getCsrfToken());
+          try {
+            const resp = await fetch("/send", { method: "POST", body });
+            const data = await resp.json();
+            if (data.reply) removeLocalPending(qid);
+          } catch (e) {
+            /* сеть опять легла — оставляем локальную копию */
+          }
+        }
+        location.reload();
+      });
+
+      // «Пропустить» из локального баннера
+      document.getElementById("local-dismiss-btn").addEventListener("click", () => {
+        removeLocalPending(localAlert.dataset.qid);
+        localAlert.style.display = "none";
+      });
+    }
+
+    // Серверный «Пропустить» / «Повторить» тоже чистит локальную копию
+    const serverDismiss = document.querySelector(".pending-dismiss-form");
+    if (serverDismiss) {
+      serverDismiss.addEventListener("submit", () => {
+        removeLocalPending(serverAlert.dataset.qid);
+      });
+    }
+    const serverRetry = document.querySelector(".pending-retry-form");
+    if (serverRetry) {
+      serverRetry.addEventListener("submit", () => {
+        removeLocalPending(serverAlert.dataset.qid);
+      });
+    }
+
+    // Синк localStorage -> YDB при загрузке и при восстановлении связи
+    if (sendForm) {
+      syncLocalQueue().then(maybeShowLocalBanner);
+      window.addEventListener("online", () => {
+        syncLocalQueue().then(maybeShowLocalBanner);
       });
     }
 

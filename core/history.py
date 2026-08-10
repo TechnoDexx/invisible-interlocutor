@@ -352,3 +352,244 @@ class MessageHistory:
 
     def close(self):
         self.driver.stop()
+
+
+class PendingQuestions:
+    """
+    Работа с неотвеченными вопросами в YDB.
+    Таблица: pending_questions (
+        id Text,
+        session_id Text,
+        user_id Text,
+        question_text Text,
+        timestamp Timestamp,
+        status Text,
+        error_reason Text,
+        PRIMARY KEY (session_id, id)
+    )
+    Индексы: (status), (session_id, status)
+    """
+
+    def __init__(self):
+        self.token_file = os.getenv("YDB_TOKEN_FILE", "/home/itshark/my_token")
+        self.endpoint = os.getenv(
+            "YDB_ENDPOINT", "grpcs://ydb.serverless.yandexcloud.net:2135")
+        self.database = os.getenv(
+            "YDB_DATABASE", "/ru-central1/b1gddu24s17cjrnssgpj/etn4rgl61kgjokonk8pb")
+
+        with open(self.token_file, "r") as f:
+            token = f.read().strip()
+
+        self._last_cleanup = None  # троттлинг ленивой очистки
+
+        self.driver = Driver(
+            endpoint=self.endpoint,
+            database=self.database,
+            credentials=AccessTokenCredentials(token)
+        )
+        self.driver.wait(timeout=10)
+        self._ensure_table_exists()
+
+    def _get_session(self):
+        for attempt in range(3):
+            try:
+                return self.driver.table_client.session().create()
+            except Exception as e:
+                if attempt == 2:
+                    raise
+                time.sleep(0.5)
+
+    def _ensure_table_exists(self):
+        session = self._get_session()
+        try:
+            session.execute_scheme("""
+                CREATE TABLE pending_questions (
+                    id Text,
+                    session_id Text,
+                    user_id Text,
+                    question_text Text,
+                    timestamp Timestamp,
+                    status Text,
+                    error_reason Text,
+                    PRIMARY KEY (session_id, id)
+                )
+            """)
+        except Exception:
+            pass
+        try:
+            session.execute_scheme("""
+                CREATE INDEX idx_pending_status ON pending_questions (status)
+            """)
+        except Exception:
+            pass
+        try:
+            session.execute_scheme("""
+                CREATE INDEX idx_session_status ON pending_questions (session_id, status)
+            """)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _parse_timestamp(ts):
+        if ts is None:
+            return None
+        if isinstance(ts, datetime.datetime):
+            return ts
+        if isinstance(ts, int):
+            return datetime.datetime.fromtimestamp(ts / 1_000_000)
+        if isinstance(ts, str):
+            try:
+                return datetime.datetime.fromisoformat(ts)
+            except ValueError:
+                pass
+        return datetime.datetime.utcnow()
+
+    def _lazy_cleanup(self, hours=24):
+        """Ленивая очистка старых записей: не чаще раза в час."""
+        now = time.time()
+        if self._last_cleanup is not None and (now - self._last_cleanup) < 3600:
+            return
+        try:
+            self.cleanup_old_pending(hours)
+        except Exception as e:
+            print(f"[PENDING] cleanup пропущен: {e}")
+        finally:
+            self._last_cleanup = now
+
+    def _record_exists(self, session_id, qid):
+        session = self._get_session()
+        query = """
+            DECLARE $session_id AS Optional<Text>;
+            DECLARE $id AS Optional<Text>;
+            SELECT id FROM pending_questions
+            WHERE session_id = $session_id AND id = $id LIMIT 1;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        result = tx.execute(
+            prepared, {"$session_id": session_id, "$id": qid})
+        return bool(result[0].rows)
+
+    def save_pending_question(self, session_id, user_id, question_text, qid,
+                              timestamp=None, status="pending", error_reason=None):
+        """Вставляет запись в YDB. Если id уже существует — пропускает (INSERT не перезаписывает).
+        Возвращает True, если запись вставлена, False если уже существовала."""
+        if timestamp is None:
+            timestamp = datetime.datetime.utcnow()
+        else:
+            timestamp = self._parse_timestamp(timestamp)
+
+        if self._record_exists(session_id, qid):
+            return False
+
+        session = self._get_session()
+        query = """
+            DECLARE $id AS Optional<Text>;
+            DECLARE $session_id AS Optional<Text>;
+            DECLARE $user_id AS Optional<Text>;
+            DECLARE $question_text AS Optional<Text>;
+            DECLARE $timestamp AS Optional<Timestamp>;
+            DECLARE $status AS Optional<Text>;
+            DECLARE $error_reason AS Optional<Text>;
+            INSERT INTO pending_questions
+                (id, session_id, user_id, question_text, timestamp, status, error_reason)
+            VALUES
+                ($id, $session_id, $user_id, $question_text, $timestamp, $status, $error_reason);
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        tx.execute(prepared, {
+            "$id": qid,
+            "$session_id": session_id,
+            "$user_id": user_id,
+            "$question_text": question_text,
+            "$timestamp": timestamp,
+            "$status": status,
+            "$error_reason": error_reason,
+        })
+        tx.commit()
+        return True
+
+    def get_pending_question(self, session_id):
+        """Последний неотвеченный вопрос сессии (status='pending')."""
+        self._lazy_cleanup()
+        session = self._get_session()
+        query = """
+            DECLARE $session_id AS Optional<Text>;
+            SELECT id, session_id, user_id, question_text, timestamp, status, error_reason
+            FROM pending_questions
+            WHERE session_id = $session_id AND status = 'pending'
+            ORDER BY timestamp DESC LIMIT 1;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        result = tx.execute(prepared, {"$session_id": session_id})
+        if result[0].rows:
+            row = result[0].rows[0]
+            return {
+                "id": row['id'],
+                "session_id": row['session_id'],
+                "user_id": row['user_id'],
+                "question_text": row['question_text'],
+                "timestamp": self._parse_timestamp(row['timestamp']).isoformat()
+                if row['timestamp'] else None,
+                "status": row['status'],
+                "error_reason": row['error_reason'],
+            }
+        return None
+
+    def resolve_pending_question(self, session_id, qid, reason=None):
+        """Помечает конкретную запись как resolved. reason=... дополнительно пишет причину."""
+        session = self._get_session()
+        query = """
+            DECLARE $session_id AS Optional<Text>;
+            DECLARE $id AS Optional<Text>;
+            DECLARE $reason AS Optional<Text>;
+            UPDATE pending_questions
+            SET status = 'resolved', error_reason = $reason
+            WHERE session_id = $session_id AND id = $id;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        tx.execute(prepared, {
+            "$session_id": session_id,
+            "$id": qid,
+            "$reason": reason,
+        })
+        tx.commit()
+
+    def set_error_reason(self, session_id, qid, reason):
+        session = self._get_session()
+        query = """
+            DECLARE $session_id AS Optional<Text>;
+            DECLARE $id AS Optional<Text>;
+            DECLARE $reason AS Optional<Text>;
+            UPDATE pending_questions
+            SET error_reason = $reason
+            WHERE session_id = $session_id AND id = $id;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        tx.execute(prepared, {
+            "$session_id": session_id,
+            "$id": qid,
+            "$reason": reason,
+        })
+        tx.commit()
+
+    def cleanup_old_pending(self, hours=24):
+        """Удаляет старые записи: и resolved, и зависшие pending старше hours часов."""
+        cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=hours)
+        session = self._get_session()
+        query = """
+            DECLARE $cutoff AS Optional<Timestamp>;
+            DELETE FROM pending_questions
+            WHERE timestamp < $cutoff;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        tx.execute(prepared, {"$cutoff": cutoff})
+        tx.commit()
+
+    def close(self):
+        self.driver.stop()
