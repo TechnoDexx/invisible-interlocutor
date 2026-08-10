@@ -253,3 +253,5 @@ last-history.json
 tests/
 tasks/*
 docs/*
+AGENTS.md
+Первый/*
