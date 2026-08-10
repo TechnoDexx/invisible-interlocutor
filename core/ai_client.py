@@ -26,7 +26,7 @@ class AIClient():
         )
         self.prompt_id = prompt_id
 
-    def ask(self, history, retries=10, timeout=10):
+    def ask(self, history, retries=10, timeout=10.0):
         """
         Отправляет историю диалога в модель и возвращает ответ.
         """

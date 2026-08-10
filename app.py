@@ -15,16 +15,18 @@ from flask_mail import Mail
 from flask_wtf import CSRFProtect
 from flask_login import LoginManager, login_user, logout_user, current_user, login_required
 from dotenv import load_dotenv
+import openai
 
 from core.ai_client import AIClient
 from core.session import Session
 from core.users import Users
-from core.history import MessageHistory
+from core.history import MessageHistory, PendingQuestions
 from services import MailService
 
 load_dotenv()
 debug = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes')
 app_debug = os.getenv('APP_DEBUG', '').lower() in ('true', '1', 'yes')
+ai_request_timeout = float(os.getenv('AI_REQUEST_TIMEOUT', 10))
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
@@ -47,10 +49,12 @@ mail = Mail(app)
 csrf = CSRFProtect(app)
 users_db = Users()
 history_db = MessageHistory()
+pending_db = PendingQuestions()
 
 # Закрываем YDB-driver при завершении процесса, чтобы не оставлять открытые соединения
 atexit.register(users_db.close)
 atexit.register(history_db.close)
+atexit.register(pending_db.close)
 
 # Передаём mail в MailService
 mail_service = MailService(app, users_db, mail)
@@ -108,9 +112,17 @@ def index():
             session.history = full_history
             session.user_id = current_user.id
 
+    # Неотвеченные вопросы: сначала YDB, при недоступности — JS подхватит из localStorage
+    pending_q = None
+    try:
+        pending_q = pending_db.get_pending_question(session_id)
+    except Exception as e:
+        if debug:
+            print(f"[DEBUG /] pending_db недоступна, fallback на localStorage: {e}")
+
     history = session.history
     response = make_response(render_template(
-        'index.html', history=history, username=username))
+        'index.html', history=history, username=username, pending_q=pending_q))
     response.set_cookie('session_id', session_id, max_age=60*60*24*30)
     return response
 
@@ -542,6 +554,22 @@ def send():
     if not user_message:
         return jsonify({'error': 'Сообщение пустое'}), 400
 
+    # Код вопроса генерируется на клиенте (JS); по нему точечно resolve.
+    qid = request.form.get('qid') or str(uuid.uuid4())
+    user_id = current_user.id if current_user.is_authenticated else None
+
+    # Страховка на случай недоступности YDB: вопрос уже лежит в localStorage (JS),
+    # здесь — попытка продублировать в облако. Если YDB недоступна — вопрос ждёт в localStorage.
+    try:
+        pending_db.save_pending_question(
+            session_id=session_id,
+            user_id=user_id,
+            question_text=user_message,
+            qid=qid,
+        )
+    except Exception as e:
+        print(f"[PENDING] YDB недоступна, вопрос останется в localStorage: {e}")
+
     session.add_user_message(user_message)
     if session.user_id:
         threading.Thread(
@@ -551,7 +579,7 @@ def send():
         ).start()
 
     try:
-        response_text = ai_client.ask(session.history)
+        response_text = ai_client.ask(session.history, timeout=ai_request_timeout)
         session.add_assistant_message(response_text)
         if session.user_id:
             threading.Thread(
@@ -559,11 +587,133 @@ def send():
                 args=(session.user_id, session_id, "assistant", response_text),
                 daemon=True
             ).start()
-        return jsonify({'reply': response_text})
+        # Ответ получен — разрешаем конкретную запись (status -> resolved)
+        try:
+            pending_db.resolve_pending_question(session_id, qid)
+        except Exception as e:
+            print(f"[PENDING] Не удалось resolve в YDB: {e}")
+        return jsonify({'reply': response_text, 'qid': qid})
+    except openai.APITimeoutError as e:
+        try:
+            pending_db.set_error_reason(session_id, qid, 'timeout')
+        except Exception:
+            pass
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Таймаут ожидания ответа: {e}'}), 504
+    except openai.APIConnectionError as e:
+        try:
+            pending_db.set_error_reason(session_id, qid, 'network')
+        except Exception:
+            pass
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Нет соединения с AI: {e}'}), 502
     except Exception as e:
+        # Вопрос остаётся в статусе pending (и в localStorage, и в YDB)
+        try:
+            pending_db.set_error_reason(session_id, qid, 'ai_error')
+        except Exception:
+            pass
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+# ========== НЕОТВЕЧЕННЫЕ ВОПРОСЫ ==========
+
+
+@app.route('/api/pending_sync', methods=['POST'])
+def pending_sync():
+    """Принимает список висящих вопросов из localStorage клиента и идемпотентно
+    докладывает их в YDB (по неизменному qid). Вызывается JS при загрузке и после online."""
+    session_id = request.cookies.get('session_id')
+    if not session_id:
+        return jsonify({'error': 'Сессия не найдена'}), 400
+
+    try:
+        data = request.get_json(silent=True) or {}
+        items = data.get('items') or []
+    except Exception:
+        items = []
+
+    user_id = current_user.id if current_user.is_authenticated else None
+    inserted = 0
+    try:
+        pending_db._lazy_cleanup(24)
+        for item in items:
+            qid = (item.get('id') or '').strip()
+            question_text = (item.get('question_text') or '').strip()
+            timestamp = item.get('timestamp')
+            if not qid or not question_text:
+                continue
+            try:
+                if pending_db.save_pending_question(
+                    session_id=session_id,
+                    user_id=user_id,
+                    question_text=question_text,
+                    qid=qid,
+                    timestamp=timestamp,
+                ):
+                    inserted += 1
+            except Exception as e:
+                print(f"[PENDING SYNC] Ошибка записи {qid}: {e}")
+        return jsonify({'synced': inserted, 'ok': True})
+    except Exception as e:
+        print(f"[PENDING SYNC] Ошибка: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/retry-question', methods=['POST'])
+def retry_question():
+    session_id = request.cookies.get('session_id')
+    if not session_id:
+        flash('Сессия не найдена.', 'danger')
+        return redirect('/')
+    pending = pending_db.get_pending_question(session_id)
+    if not pending:
+        flash('Нет вопросов для повторной отправки.', 'info')
+        return redirect('/')
+
+    session = get_session(session_id)
+    history = session.history if session else []
+    try:
+        response_text = ai_client.ask(
+            history + [{"role": "user", "content": pending['question_text']}],
+            timeout=ai_request_timeout,
+        )
+        session.add_assistant_message(response_text)
+        # Разрешаем конкретную запись, а не все pending подряд
+        pending_db.resolve_pending_question(session_id, pending['id'])
+        flash('Ответ получен.', 'success')
+    except openai.APITimeoutError:
+        pending_db.set_error_reason(session_id, pending['id'], 'timeout')
+        flash('Не удалось получить ответ (таймаут). Попробуйте позже.', 'danger')
+    except openai.APIConnectionError:
+        pending_db.set_error_reason(session_id, pending['id'], 'network')
+        flash('Не удалось получить ответ (нет соединения). Попробуйте позже.', 'danger')
+    except Exception as e:
+        pending_db.set_error_reason(session_id, pending['id'], 'ai_error')
+        flash(f'Не удалось получить ответ. Попробуйте позже.', 'danger')
+
+    return redirect('/')
+
+
+@app.route('/pending-dismiss', methods=['POST'])
+def pending_dismiss():
+    session_id = request.cookies.get('session_id')
+    if not session_id:
+        return redirect('/')
+    qid = request.form.get('qid', '').strip()
+    if not qid:
+        flash('Не указан вопрос.', 'info')
+        return redirect('/')
+    try:
+        # resolved + error_reason='dismissed' — вопрос не воскреснет в выборках pending
+        pending_db.resolve_pending_question(session_id, qid, reason='dismissed')
+    except Exception as e:
+        print(f"[PENDING DISMISS] Ошибка: {e}")
+    return redirect('/')
 
 
 if __name__ == '__main__':
