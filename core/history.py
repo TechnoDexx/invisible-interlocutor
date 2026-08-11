@@ -578,13 +578,17 @@ class PendingQuestions:
         tx.commit()
 
     def cleanup_old_pending(self, hours=24):
-        """Удаляет старые записи: и resolved, и зависшие pending старше hours часов."""
+        """Удаляет старые зависшие вопросы (status='pending') старше hours часов.
+
+        resolved-записи не удаляются: они накапливаются и питают счётчик
+        «отвеченных» (Yandex Datalens). Удаление resolved — отдельный TTL.
+        """
         cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=hours)
         session = self._get_session()
         query = """
             DECLARE $cutoff AS Optional<Timestamp>;
             DELETE FROM pending_questions
-            WHERE timestamp < $cutoff;
+            WHERE status = 'pending' AND timestamp < $cutoff;
         """
         prepared = session.prepare(query)
         tx = session.transaction()
