@@ -262,6 +262,8 @@
             errorDiv.textContent = "Ошибка: " + (data.error || "неизвестно");
             chatBox.appendChild(errorDiv);
             chatBox.scrollTop = chatBox.scrollHeight;
+            // Сразу показать плашку «повторить вопрос», не дожидаясь перезагрузки
+            maybeShowLocalBanner();
           }
         } catch (err) {
           // Сеть оборвалась — локальная копия гарантирует, что вопрос не потерян
@@ -270,6 +272,7 @@
           errorDiv.textContent = "Ошибка соединения";
           chatBox.appendChild(errorDiv);
           chatBox.scrollTop = chatBox.scrollHeight;
+          maybeShowLocalBanner();
         }
       });
     }
