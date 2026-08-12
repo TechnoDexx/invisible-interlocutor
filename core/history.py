@@ -444,13 +444,14 @@ class PendingQuestions:
                 pass
         return datetime.datetime.utcnow()
 
-    def _lazy_cleanup(self, hours=24):
+    def _lazy_cleanup(self, hours=24, resolved_days=30):
         """Ленивая очистка старых записей: не чаще раза в час."""
         now = time.time()
         if self._last_cleanup is not None and (now - self._last_cleanup) < 3600:
             return
         try:
             self.cleanup_old_pending(hours)
+            self.cleanup_old_resolved(days=resolved_days)
         except Exception as e:
             print(f"[PENDING] cleanup пропущен: {e}")
         finally:
@@ -589,6 +590,25 @@ class PendingQuestions:
             DECLARE $cutoff AS Optional<Timestamp>;
             DELETE FROM pending_questions
             WHERE status = 'pending' AND timestamp < $cutoff;
+        """
+        prepared = session.prepare(query)
+        tx = session.transaction()
+        tx.execute(prepared, {"$cutoff": cutoff})
+        tx.commit()
+
+    def cleanup_old_resolved(self, days=30):
+        """Удаляет отвеченные (status='resolved') записи старше days дней.
+
+        Отдельный TTL для resolved: запись живёт достаточно долго, чтобы
+        счётчик «отвеченных» (Yandex Datalens) был честным, но таблица не
+        растёт бесконечно.
+        """
+        cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=days)
+        session = self._get_session()
+        query = """
+            DECLARE $cutoff AS Optional<Timestamp>;
+            DELETE FROM pending_questions
+            WHERE status = 'resolved' AND timestamp < $cutoff;
         """
         prepared = session.prepare(query)
         tx = session.transaction()
